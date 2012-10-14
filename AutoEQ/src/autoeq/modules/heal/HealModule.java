@@ -29,7 +29,7 @@ import com.google.inject.Inject;
 @ThreadScoped
 public class HealModule implements Module {
   private final EverquestSession session;
-  private final List<Heal> heals = new ArrayList<Heal>();
+  private final List<Heal> heals = new ArrayList<>();
   private final int maxHealRange;
 
   @Inject
@@ -75,7 +75,7 @@ public class HealModule implements Module {
 
   @Override
   public List<Command> pulse() {
-    List<Command> commands = new ArrayList<Command>();
+    List<Command> commands = new ArrayList<>();
     Me me = session.getMe();
 
     if(!me.isMoving() && me.getType() == SpawnType.PC) {
@@ -104,7 +104,7 @@ public class HealModule implements Module {
        * Gather potential targets
        */
 
-      Set<Spawn> targets = new HashSet<Spawn>();
+      Set<Spawn> targets = new HashSet<>();
 
       targets.addAll(session.getBots());
       targets.addAll(session.getGroupMembers());
@@ -141,7 +141,7 @@ public class HealModule implements Module {
 
 //            System.out.println("Heal Target -> " + target);
             if(TargetPattern.isValidTarget(heal.validTargets, target)) {
-              if(ExpressionEvaluator.evaluate(heal.conditions, new ExpressionRoot(session, target, null, heal.getEffect()), this)) {
+              if(ExpressionEvaluator.evaluate(heal.getConditions(), new ExpressionRoot(session, target, null, heal.getEffect()), this)) {
                 if(heal.getEffect().getSpell().isValidTarget(target)) {
                   if(target.willStack(heal.getEffect().getSpell())) {
                     if(target.getDistance() <= maxHealRange) {

@@ -36,7 +36,7 @@ public class MoveUtils2 {
 
     session.log(String.format("MOVE: from %.2f,%.2f to %.2f,%.2f; noStop = " + noStop + "; forwards = " + forwards, startY, startX, y, x));
 
-    HistoryValue<Double> distanceHistory = new HistoryValue<Double>(20000);
+    HistoryValue<Double> distanceHistory = new HistoryValue<>(20000);
     boolean moveSent = false;
     Timer moveTimer = new Timer(1500);
 

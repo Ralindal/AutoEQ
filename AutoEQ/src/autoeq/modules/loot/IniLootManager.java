@@ -18,6 +18,7 @@ public class IniLootManager implements LootManager {
     reloadIni();
   }
   
+  @Override
   public void addLoot(String name, LootType type) {
     if(checkIni()) {
       Section section = ini.getSection(name.substring(0, 1).toUpperCase());
@@ -40,6 +41,7 @@ public class IniLootManager implements LootManager {
     }
   }
 
+  @Override
   public LootType getLootType(String name) {
     if(checkIni()) {
       Section section = ini.getSection(name.substring(0, 1).toUpperCase());

@@ -17,28 +17,34 @@ public class DisciplineEffect implements Effect {
     this.agro = agro;
     
     session.registerExpression("${Me.CombatAbilityReady[" + spell.getName() + "]}", new ExpressionListener() {
+      @Override
       public void stateUpdated(String result) {
         ready = result.equals("TRUE");
       }
     });
   }
 
+  @Override
   public Spell getSpell() {
     return spell;
   }
 
+  @Override
   public Type getType() {
     return Type.DISCIPLINE;
   }
   
+  @Override
   public int getAgro() {
     return agro;
   }
   
+  @Override
   public String getCastingLine() {
     return "/nomod /doability \"" + spell.getName() + "\"";
   }
 
+  @Override
   public boolean isReady() {
     return ready;
   }
@@ -48,6 +54,7 @@ public class DisciplineEffect implements Effect {
     return name;
   }
 
+  @Override
   public boolean willUseGOM() {
     return false;
   }

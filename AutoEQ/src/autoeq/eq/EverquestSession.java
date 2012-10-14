@@ -51,17 +51,17 @@ import com.google.inject.Injector;
 
 public class EverquestSession {
   private final MyThread thread;
-  private final List<Module> modules = new ArrayList<Module>();
+  private final List<Module> modules = new ArrayList<>();
   private final String sessionName;
   private final Map<Integer, SpellData> rawSpellData;
   private final Ini2 globalIni;
 
-  private final Map<Integer, Spawn> spawns = new HashMap<Integer, Spawn>();
-  private final Map<Integer, Spell> spells = new HashMap<Integer, Spell>();
-  private final Set<String> groupMemberNames = new HashSet<String>();
-  private final Set<String> botNames = new HashSet<String>();
-  private final Set<ProfileSet> profileSets = new LinkedHashSet<ProfileSet>();
-  private final Set<String> ignoreList = new HashSet<String>();
+  private final Map<Integer, Spawn> spawns = new HashMap<>();
+  private final Map<Integer, Spell> spells = new HashMap<>();
+  private final Set<String> groupMemberNames = new HashSet<>();
+  private final Set<String> botNames = new HashSet<>();
+  private final Set<ProfileSet> profileSets = new LinkedHashSet<>();
+  private final Set<String> ignoreList = new HashSet<>();
 
   private Ini2 ini;
   private File iniFile;
@@ -82,6 +82,7 @@ public class EverquestSession {
     this.rawSpellData = rawSpellData;
     this.globalIni = globalIni;
 
+    @SuppressWarnings("resource")
     Socket socket = new Socket(host, port);
 
     socket.setSoTimeout(1000);
@@ -153,7 +154,7 @@ public class EverquestSession {
    * @return a set of spawns with all group members in this zone
    */
   public Set<Spawn> getGroupMembers() {
-    HashSet<Spawn> members = new HashSet<Spawn>();
+    HashSet<Spawn> members = new HashSet<>();
 
     for(String name : groupMemberNames) {
       Spawn spawn = getSpawn(name);
@@ -170,7 +171,7 @@ public class EverquestSession {
    * @return a set of spawns with all bots in this zone
    */
   public Set<Spawn> getBots() {
-    HashSet<Spawn> bots = new HashSet<Spawn>();
+    HashSet<Spawn> bots = new HashSet<>();
 
     for(String name : botNames) {
       Spawn spawn = getSpawn(name);
@@ -200,15 +201,15 @@ public class EverquestSession {
     castLockEndMillis = System.currentTimeMillis() + ms;
   }
 
-  private final Map<String, UserCommandWrapper> userCommands = new HashMap<String, UserCommandWrapper>();
+  private final Map<String, UserCommandWrapper> userCommands = new HashMap<>();
 
   public void addUserCommand(String name, Pattern parameters, String helpText, UserCommand command) {
     System.out.println("Added user command : " + name);
     userCommands.put(name, new UserCommandWrapper(command, parameters, helpText));
   }
 
-  private final Map<String, Long> timers = new LinkedHashMap<String, Long>();
-  private final Map<String, Long> startedTimers = new LinkedHashMap<String, Long>();
+  private final Map<String, Long> timers = new LinkedHashMap<>();
+  private final Map<String, Long> startedTimers = new LinkedHashMap<>();
 
   private void startTimer(String name) {
     long millis = System.currentTimeMillis();
@@ -331,7 +332,7 @@ public class EverquestSession {
 //        });
 
         if(getMe() != null) {
-          List<Command> commands = new ArrayList<Command>();
+          List<Command> commands = new ArrayList<>();
 
           getMe().unlockAllSpellSlots();
 
@@ -412,7 +413,7 @@ public class EverquestSession {
     boolean fullUpdate = false;
 
     while(unprocessedDataBurstCount > 0) {
-      List<String> dataBurst = new ArrayList<String>();
+      List<String> dataBurst = new ArrayList<>();
       boolean containsAllSpawns = false;
       boolean zoning = false;
 
@@ -488,7 +489,7 @@ public class EverquestSession {
         }
 
       //    System.out.println("Processing data burst");
-        Set<Integer> foundSpawnIDs = new HashSet<Integer>();
+        Set<Integer> foundSpawnIDs = new HashSet<>();
         int spawnCountCheck = 0;
         String previousLine = "(empty)";
         String lastSpawnLine = "(empty)";
@@ -769,8 +770,8 @@ public class EverquestSession {
     });
   }
 
-  private final List<ChatListener> chatListeners = new ArrayList<ChatListener>();
-  private final LinkedList<String> chatLines = new LinkedList<String>();
+  private final List<ChatListener> chatListeners = new ArrayList<>();
+  private final LinkedList<String> chatLines = new LinkedList<>();
 
   public void addChatListener(ChatListener listener) {
     chatListeners.add(listener);
@@ -794,7 +795,7 @@ public class EverquestSession {
     }
   }
 
-  private Map<Class<?>, ResourceProvider<?>> resourceProviders = new HashMap<Class<?>, ResourceProvider<?>>();
+  private Map<Class<?>, ResourceProvider<?>> resourceProviders = new HashMap<>();
 
   public <T> boolean testResource(Class<T> cls) {
     T t = obtainResource(cls);
@@ -826,7 +827,7 @@ public class EverquestSession {
     resourceProviders.put(cls, provider);
   }
 
-  private final Event<EverquestSession> onZoned = new Event<EverquestSession>(this);
+  private final Event<EverquestSession> onZoned = new Event<>(this);
 
   public Event<EverquestSession>.Interface onZoned() {
     return onZoned.getInterface();
@@ -947,7 +948,7 @@ public class EverquestSession {
 
     unloadModules();
 
-    moveLock = new Lock<Module>();
+    moveLock = new Lock<>();
 
     Section section = globalIni.getSection("Modules");
     Injector injector = Guice.createInjector(new EverquestModule(this));
@@ -1055,7 +1056,7 @@ public class EverquestSession {
   }
 
   public Set<Spawn> getSpawns() {
-    Set<Spawn> set = new HashSet<Spawn>();
+    Set<Spawn> set = new HashSet<>();
 
     set.addAll(spawns.values());
 
@@ -1122,7 +1123,7 @@ public class EverquestSession {
   }
 
   public Set<String> getActiveProfiles() {
-    Set<String> activeProfiles = new HashSet<String>();
+    Set<String> activeProfiles = new HashSet<>();
 
     for(ProfileSet set : profileSets) {
       String activeProfile = set.getActiveProfile();
@@ -1136,7 +1137,7 @@ public class EverquestSession {
   }
 
   public Set<String> getAuras() {
-    Set<String> auras = new HashSet<String>();
+    Set<String> auras = new HashSet<>();
 
     for(Spawn spawn : spawns.values()) {
       if(spawn.getType() == SpawnType.AURA) {
@@ -1161,7 +1162,7 @@ public class EverquestSession {
     return null;
   }
 
-  private final Map<String, Effect> effects = new HashMap<String, Effect>();
+  private final Map<String, Effect> effects = new HashMap<>();
 
   /**
    * Gets an Effect based on a description string.<br>
@@ -1241,7 +1242,7 @@ public class EverquestSession {
     return ExpressionEvaluator.evaluate(Arrays.asList(expr), new ProfileExpressionRoot(profileSets), profiles);
   }
 
-  private final LinkedHashMap<String, List<ExpressionListener>> expressionListeners = new LinkedHashMap<String, List<ExpressionListener>>();
+  private final LinkedHashMap<String, List<ExpressionListener>> expressionListeners = new LinkedHashMap<>();
 
   private int expressionsVersion;
 
@@ -1249,7 +1250,7 @@ public class EverquestSession {
     List<ExpressionListener> listeners = expressionListeners.get(expression);
 
     if(listeners == null) {
-      listeners = new ArrayList<ExpressionListener>();
+      listeners = new ArrayList<>();
       expressionListeners.put(expression, listeners);
     }
 
@@ -1270,8 +1271,8 @@ public class EverquestSession {
   }
 
   private class MyThread extends Thread {
-    private final Map<Integer, String> responses = new HashMap<Integer, String>();
-    private final Map<Integer, String> waiters = new HashMap<Integer, String>();
+    private final Map<Integer, String> responses = new HashMap<>();
+    private final Map<Integer, String> waiters = new HashMap<>();
     private final BufferedReader reader;
     private final PrintWriter writer;
 
@@ -1319,7 +1320,7 @@ public class EverquestSession {
     }
 
 
-    private final List<String> debugBuffer = new LinkedList<String>();
+    private final List<String> debugBuffer = new LinkedList<>();
     private final DateFormat dateFormat = new SimpleDateFormat("dd-MM-yyyy HH:mm:ss.SSS");
 
     @SuppressWarnings("unused")

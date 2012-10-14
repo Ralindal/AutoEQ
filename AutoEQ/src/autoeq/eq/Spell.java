@@ -201,7 +201,7 @@ public class Spell {
     return "Spell: " + name;
   }
 
-  private static Map<String, Set<String>> equivalentMap = new HashMap<String, Set<String>>();
+  private static Map<String, Set<String>> equivalentMap = new HashMap<>();
 
   static {
     addEquivalent("Balance of Discord", "Turgur's Swarm");
@@ -209,7 +209,7 @@ public class Spell {
   }
 
   private static void addEquivalent(String... spellNames) {
-    Set<String> equivalentSpells = new HashSet<String>(Arrays.asList(spellNames));
+    Set<String> equivalentSpells = new HashSet<>(Arrays.asList(spellNames));
 
     for(String spellName : equivalentSpells) {
       equivalentMap.put(spellName, equivalentSpells);

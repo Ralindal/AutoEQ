@@ -14,22 +14,27 @@ public class SongEffect implements Effect {
     this.agro = agro;
   }
   
+  @Override
   public Spell getSpell() {
     return spell;
   }
 
+  @Override
   public Type getType() {
     return Type.SONG;
   }
 
+  @Override
   public int getAgro() {
     return agro;
   }
 
+  @Override
   public String getCastingLine() {
     return "/cast " + session.getMe().getGem(spell);
   }
 
+  @Override
   public boolean isReady() {
     return session.getMe().isSpellReady(spell);
   }
@@ -39,6 +44,7 @@ public class SongEffect implements Effect {
     return spell.getName();
   }
 
+  @Override
   public boolean willUseGOM() {
     return false;
   }

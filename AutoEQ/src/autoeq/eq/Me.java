@@ -21,12 +21,12 @@ public class Me extends Spawn {
 //  private final SpellProperty[] gems;
   private final Spell[] gems = new Spell[SPELL_GEMS];
   private final boolean[] gemReadyList = new boolean[SPELL_GEMS];
-  private final Set<Integer> extendedTargetIDs = new HashSet<Integer>();
+  private final Set<Integer> extendedTargetIDs = new HashSet<>();
 
-  private final List<Integer> lruSpellSlots = new LinkedList<Integer>();
+  private final List<Integer> lruSpellSlots = new LinkedList<>();
 
-  private final HistoryValue<Integer> manaHistory = new HistoryValue<Integer>(7500);
-  private final HistoryValue<Integer> dmgHistory = new HistoryValue<Integer>(10000);
+  private final HistoryValue<Integer> manaHistory = new HistoryValue<>(7500);
+  private final HistoryValue<Integer> dmgHistory = new HistoryValue<>(10000);
 
   private final int maxSpellSlots;
 
@@ -109,7 +109,7 @@ public class Me extends Spawn {
    * Actions
    */
 
-  private final Set<Integer> lockedSpellSlots = new HashSet<Integer>();
+  private final Set<Integer> lockedSpellSlots = new HashSet<>();
 
   public void lockSpellSlot(int slot) {
     lockedSpellSlots.add(slot);
@@ -419,7 +419,7 @@ public class Me extends Spawn {
    * @return
    */
   public int getGroupHitPointsPct() {
-    List<Integer> healths = new ArrayList<Integer>(6);
+    List<Integer> healths = new ArrayList<>(6);
 
     for(Spawn member : session.getGroupMembers()) {
       healths.add(member.getHitPointsPct());

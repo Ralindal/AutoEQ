@@ -29,8 +29,8 @@ public class LootModule implements Module {
 
   private final EverquestSession session;
   private final LootManager lootManager;
-  private final Set<Spawn> looted = new HashSet<Spawn>();
-  private final Map<Spawn, Long> delayedCorpses = new HashMap<Spawn, Long>();
+  private final Set<Spawn> looted = new HashSet<>();
+  private final Map<Spawn, Long> delayedCorpses = new HashMap<>();
 
   private long lootDelayUntil;
   private String lootPattern;

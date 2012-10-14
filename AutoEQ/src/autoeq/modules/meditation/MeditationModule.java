@@ -29,6 +29,7 @@ public class MeditationModule implements Module {
     this.session = session;
     
     session.addUserCommand("med", Pattern.compile("(on|off|status)"), "(on|off|status)", new UserCommand() {
+      @Override
       public void onCommand(Matcher matcher) {
         if(matcher.group(1).toLowerCase().equals("on")) {
           active = true;
@@ -46,6 +47,7 @@ public class MeditationModule implements Module {
     return 9;
   }
   
+  @Override
   public List<Command> pulse() {
     Me me = session.getMe();
     
@@ -98,6 +100,7 @@ public class MeditationModule implements Module {
     return null;
   }
   
+  @Override
   public boolean isLowLatency() {
     return false;
   }

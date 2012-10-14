@@ -138,7 +138,7 @@ public class ActivateEffectCommand implements Command {
     return true;
   }
 
-  private void increaseAgro(Effect effect, Spawn... targets) {
+  private static void increaseAgro(Effect effect, Spawn... targets) {
     for(Spawn target : targets) {
       target.increaseAgro(effect.getAgro());
     }

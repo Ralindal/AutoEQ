@@ -30,7 +30,7 @@ import com.google.inject.Inject;
 @ThreadScoped
 public class BuffModule implements Module {
   private final EverquestSession session;
-  private final List<BuffLine> buffLines = new ArrayList<BuffLine>();
+  private final List<BuffLine> buffLines = new ArrayList<>();
 
   private boolean putPetOnHold;
 
@@ -45,13 +45,9 @@ public class BuffModule implements Module {
     }
   }
 
-  public int getPriority() {
-    return 7;
-  }
-
   @Override
   public List<Command> pulse() {
-    List<Command> commands = new ArrayList<Command>();
+    List<Command> commands = new ArrayList<>();
     Me me = session.getMe();
 
     if((!me.isMoving() || me.isBard()) && me.getType() == SpawnType.PC) {
@@ -101,7 +97,7 @@ public class BuffModule implements Module {
        * Create set of buff targets
        */
 
-      Set<Spawn> potentialTargets = new HashSet<Spawn>();
+      Set<Spawn> potentialTargets = new HashSet<>();
 
       potentialTargets.addAll(session.getBots());
       potentialTargets.addAll(session.getGroupMembers());
@@ -131,11 +127,11 @@ public class BuffModule implements Module {
   }
 
   private List<Buff> handleBuffs(Set<Spawn> potentialTargets) {
-    List<Buff> buffs = new ArrayList<Buff>();
+    List<Buff> buffs = new ArrayList<>();
 
     for(BuffLine buffLine : buffLines) {
       if(session.isProfileActive(buffLine.getProfile()) && buffLine.isEnabled()) {
-        Map<EffectSet, List<Spawn>> m = new HashMap<EffectSet, List<Spawn>>();
+        Map<EffectSet, List<Spawn>> m = new HashMap<>();
 
 
         for(Spawn potentialTarget : potentialTargets) {
@@ -176,7 +172,7 @@ public class BuffModule implements Module {
                         List<Spawn> targets = m.get(effectSet);
 
                         if(targets == null) {
-                          targets = new ArrayList<Spawn>();
+                          targets = new ArrayList<>();
                           m.put(effectSet, targets);
                         }
 
@@ -215,7 +211,7 @@ public class BuffModule implements Module {
    * Otherwise we'll mem something.
    */
   private List<Command> memOrCast(List<Buff> buffs) {
-    List<Command> commands = new ArrayList<Command>();
+    List<Command> commands = new ArrayList<>();
     Me me = session.getMe();
     MemorizeCommand memorizeCommand = null;
 

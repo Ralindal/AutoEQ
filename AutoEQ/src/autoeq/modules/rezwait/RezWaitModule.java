@@ -23,17 +23,19 @@ public class RezWaitModule implements Module {
   private long deathMillis;
 //  private float lastExperience;
   private boolean death;
-  
+
   @Inject
   public RezWaitModule(final EverquestSession session) {
     this.session = session;
-    
+
     session.addChatListener(new ChatListener() {
 
+      @Override
       public Pattern getFilter() {
         return Pattern.compile("(You regain some experience from resurrection\\.|You gained party experience!)");
       }
 
+      @Override
       public void match(Matcher matcher) {
         session.echo("REZWAIT: Rezzed or gained experience, cancelling automatic camp-out.");
         death = false;
@@ -41,14 +43,16 @@ public class RezWaitModule implements Module {
       }
     });
   }
- 
+
+  @Override
   public boolean isLowLatency() {
     return false;
   }
 
+  @Override
   public List<Command> pulse() {
     Me me = session.getMe();
-    
+
     if(!me.isAlive() && !death) {
       death = true;
       deathMillis = System.currentTimeMillis();
@@ -57,7 +61,7 @@ public class RezWaitModule implements Module {
 
     if(deathMillis != 0) {
       long waitedMillis = System.currentTimeMillis() - deathMillis;
-      
+
       // If dead more than an hour then camp out
       if(waitedMillis > 60 * 60 * 1000) {
         session.echo("REZWAIT: Waited for an hour, camping out.");
@@ -68,25 +72,25 @@ public class RezWaitModule implements Module {
         session.echo("REZWAIT: " + (60 - (waitedMillis / 1000 / 60)) + " minutes left before camping out");
         session.delay(1000);
       }
-      
+
       // TODO Useless now because no corpses need looting, but it blocks other commands from processing.
-      return new ArrayList<Command>(Arrays.asList(new Command[] {new LootCorpseCommand()})); 
+      return new ArrayList<>(Arrays.asList(new Command[] {new LootCorpseCommand()}));
     }
-    
+
     return null;
   }
-  
+
 //  public List<Command> pulse() {
 //    Me me = session.getMe();
 //    float currentExperience = me.getExperience() + me.getLevel();
-//        
+//
 //    if(lastExperience == 0) {
 //      lastExperience = currentExperience;
 //    }
-//    
+//
 //    float expDelta = currentExperience - lastExperience;
 //    lastExperience = currentExperience;
-//    
+//
 //    if(expDelta < 0) {
 //      if(deathMillis == 0) {
 //        deathMillis = System.currentTimeMillis();
@@ -101,7 +105,7 @@ public class RezWaitModule implements Module {
 //
 //    if(deathMillis != 0) {
 //      long waitedMillis = System.currentTimeMillis() - deathMillis;
-//      
+//
 //      // If dead more than an hour then camp out
 //      if(waitedMillis > 60 * 60 * 1000) {
 //        session.echo("REZWAIT: Waited for an hour, camping out.");
@@ -112,11 +116,11 @@ public class RezWaitModule implements Module {
 //        session.echo("REZWAIT: " + (60 - (waitedMillis / 1000 / 60)) + " minutes left before camping out");
 //        session.delay(1000);
 //      }
-//      
+//
 //      // TODO Use now because no corpses need looting, but it blocks other commands from processing.
-//      return new ArrayList<Command>(Arrays.asList(new Command[] {new LootCorpseCommand()})); 
+//      return new ArrayList<Command>(Arrays.asList(new Command[] {new LootCorpseCommand()}));
 //    }
-//    
+//
 //    return null;
 //  }
 }

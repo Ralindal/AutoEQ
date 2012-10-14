@@ -10,7 +10,7 @@ import autoeq.eq.LocationListener;
 
 public class Path implements LocationListener {
   private final EverquestSession session;
-  private final LinkedList<Location> locations = new LinkedList<Location>();
+  private final LinkedList<Location> locations = new LinkedList<>();
 
   public Path(EverquestSession session) {
     this.session = session;

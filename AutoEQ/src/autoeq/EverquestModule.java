@@ -21,11 +21,13 @@ public class EverquestModule extends AbstractModule {
 
   @Override
   protected void configure() {
-    final Map<Key<?>, Object> cache = new HashMap<Key<?>, Object>();
-    
+    final Map<Key<?>, Object> cache = new HashMap<>();
+
     bindScope(ThreadScoped.class, new Scope() {
+      @Override
       public <T> Provider<T> scope(final Key<T> key, final Provider<T> creator) {
         return new Provider<T>() {
+          @Override
           @SuppressWarnings("unchecked")
           public T get() {
             T value = (T)cache.get(key);

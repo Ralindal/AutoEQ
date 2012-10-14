@@ -23,9 +23,9 @@ public class TokenizerTestCase extends TestCase {
     assertEquals(Arrays.asList("\"apple\"", "+", "\"sauce\""), tokenize("\"apple\" + \"sauce\""));
   }
 
-  private List<String> tokenize(String s) {
+  private static List<String> tokenize(String s) {
     Matcher matcher = PATTERN.matcher(s);
-    List<String> tokens = new ArrayList<String>();
+    List<String> tokens = new ArrayList<>();
 
     while(matcher.find()) {
       tokens.add(matcher.group());

@@ -30,7 +30,7 @@ import com.google.inject.Inject;
 @ThreadScoped
 public class DebuffModule implements Module {
   private final EverquestSession session;
-  private final List<DebuffLine> debuffLines = new ArrayList<DebuffLine>();
+  private final List<DebuffLine> debuffLines = new ArrayList<>();
   private final TargetModule targetModule;
 
   private Spawn mainTarget;
@@ -41,7 +41,7 @@ public class DebuffModule implements Module {
     this.targetModule = targetModule;
     for(Section section : session.getIni()) {
       if(section.getName().startsWith("Debuff.")) {
-        List<Effect> effects = new ArrayList<Effect>();
+        List<Effect> effects = new ArrayList<>();
         int agro = Integer.parseInt(section.getDefault("Agro", "100"));
 
         for(String effectDescription : section.getAll("Spell")) {
@@ -66,13 +66,9 @@ public class DebuffModule implements Module {
     }
   }
 
-  public int getPriority() {
-    return 3;
-  }
-
   @Override
   public List<Command> pulse() {
-    List<Command> commands = new ArrayList<Command>();
+    List<Command> commands = new ArrayList<>();
     Me me = session.getMe();
 
     if(!me.isMoving() && me.getType() == SpawnType.PC) {
@@ -112,7 +108,7 @@ public class DebuffModule implements Module {
         mainTarget = null;
       }
 
-      LinkedHashMap<DebuffLine, List<Spawn>> targetLists = new LinkedHashMap<DebuffLine, List<Spawn>>();
+      LinkedHashMap<DebuffLine, List<Spawn>> targetLists = new LinkedHashMap<>();
       boolean assisted = false;
 
 //      debuffLines:
@@ -149,7 +145,7 @@ public class DebuffModule implements Module {
                         List<Spawn> targets = targetLists.get(debuffLine);
 
                         if(targets == null) {
-                          targets = new ArrayList<Spawn>();
+                          targets = new ArrayList<>();
                           targetLists.put(debuffLine, targets);
                         }
 

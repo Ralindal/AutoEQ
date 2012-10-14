@@ -205,10 +205,12 @@ public class ExpressionTest {
       return false;
     }
 
+    @SuppressWarnings("unused")
     public boolean isExtendedTarget(Spawn2 spawn) {
       return false;
     }
 
+    @SuppressWarnings("unused")
     public boolean isExtendedTargetB(Spawn2 spawn) {
       return true;
     }

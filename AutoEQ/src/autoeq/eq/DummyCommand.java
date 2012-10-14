@@ -9,10 +9,12 @@ public class DummyCommand implements Command {
     this.moduleName = moduleName;
   }
   
+  @Override
   public boolean execute(EverquestSession session) {
     return true;
   }
 
+  @Override
   public double getPriority() {
     return priority;
   }

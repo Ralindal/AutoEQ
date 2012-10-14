@@ -20,7 +20,7 @@ public class ExperienceModule implements Module, ChatListener {
   private static final Pattern XP_PATTERN = Pattern.compile("(You gain .*experience!!|You gained raid experience!)");
 
   private final EverquestSession session;
-  private final LinkedList<Point> points = new LinkedList<Point>();
+  private final LinkedList<Point> points = new LinkedList<>();
   private int killCount;
 
   @Inject

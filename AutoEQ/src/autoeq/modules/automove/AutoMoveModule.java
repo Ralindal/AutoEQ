@@ -23,7 +23,7 @@ public class AutoMoveModule implements Module {
 
   private long lastMillis;
 
-  private final Set<Node> nodes = new HashSet<Node>();
+  private final Set<Node> nodes = new HashSet<>();
 
   private Node startNode;
   private int lastNodeCount;
@@ -48,51 +48,50 @@ public class AutoMoveModule implements Module {
 
     if(System.currentTimeMillis() - lastMillis > 10000 && lastNodeCount != nodes.size() && startNode != null) {
       try {
-        PrintWriter writer = new PrintWriter(new FileWriter("d:/nodes.ini"));
+        try(PrintWriter writer = new PrintWriter(new FileWriter("d:/nodes.ini"))) {
 
-        Set<Path> traversedPaths = new HashSet<Path>();
-        LinkedList<Node> starterNodes = new LinkedList<Node>();
+          Set<Path> traversedPaths = new HashSet<>();
+          LinkedList<Node> starterNodes = new LinkedList<>();
 
-        starterNodes.add(startNode);
+          starterNodes.add(startNode);
 
-        writer.println("[Nodes]");
-        int pathNo = 1;
+          writer.println("[Nodes]");
+          int pathNo = 1;
 
-        while(!starterNodes.isEmpty()) {
-          Node node = starterNodes.removeFirst();
-          boolean first = true;
+          while(!starterNodes.isEmpty()) {
+            Node node = starterNodes.removeFirst();
+            boolean first = true;
 
-          while(node != null) {
-            if(!first) {
-              writer.print(" ");
-            }
-            else {
-              writer.print("path" + pathNo++ + "=");
-            }
-            first = false;
-            writer.printf("%d,%d|0", node.getY(), node.getX());
+            while(node != null) {
+              if(!first) {
+                writer.print(" ");
+              }
+              else {
+                writer.print("path" + pathNo++ + "=");
+              }
+              first = false;
+              writer.printf("%d,%d|0", node.getY(), node.getX());
 
-            Node currentNode = node;
-            node = null;
+              Node currentNode = node;
+              node = null;
 
-            for(Node neighbour : currentNode.getNeighbours()) {
-              if(!traversedPaths.contains(new Path(neighbour, currentNode))) {
-                if(node == null) {
-                  node = neighbour;
-                  traversedPaths.add(new Path(neighbour, currentNode));
-                }
-                else {
-                  starterNodes.add(currentNode);
-                  break;
+              for(Node neighbour : currentNode.getNeighbours()) {
+                if(!traversedPaths.contains(new Path(neighbour, currentNode))) {
+                  if(node == null) {
+                    node = neighbour;
+                    traversedPaths.add(new Path(neighbour, currentNode));
+                  }
+                  else {
+                    starterNodes.add(currentNode);
+                    break;
+                  }
                 }
               }
             }
+
+            writer.println();
           }
-
-          writer.println();
         }
-
-        writer.close();
       }
       catch(IOException e) {
       }

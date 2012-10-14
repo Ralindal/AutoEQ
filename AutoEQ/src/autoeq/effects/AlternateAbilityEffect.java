@@ -17,28 +17,34 @@ public class AlternateAbilityEffect implements Effect {
     this.agro = agro;
     
     session.registerExpression("${Cast.Ready[" + name + "|alt]}", new ExpressionListener() {
+      @Override
       public void stateUpdated(String result) {
         ready = result.equals("TRUE");
       }
     });
   }
 
+  @Override
   public Spell getSpell() {
     return spell;
   }
 
+  @Override
   public Type getType() {
     return Type.ABILITY;
   }
   
+  @Override
   public int getAgro() {
     return agro;
   }
   
+  @Override
   public String getCastingLine() {
     return "/casting \"" + name + "\" alt";
   }
 
+  @Override
   public boolean isReady() {
     return ready;
   }
@@ -48,6 +54,7 @@ public class AlternateAbilityEffect implements Effect {
     return name;
   }
 
+  @Override
   public boolean willUseGOM() {
     return false;
   }

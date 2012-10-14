@@ -14,19 +14,15 @@ import java.util.regex.Pattern;
 import autoeq.DebuffCounter;
 import autoeq.SpellData;
 
-
 // TODO Spawns are too permanent... EQ likely reuses id's
 public class Spawn {
   private static final Pattern PATTERN = Pattern.compile("#S-[0-9]+ [0-9]+ ([0-9]+) ([-0-9]+) ([0-9]+) ([-0-9]+) ([0-9]+) ([0-9]+) ([-0-9\\.]+),([-0-9\\.]+),([-0-9\\.]+) ([-0-9\\.]+) ([-0-9\\.]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([0-9]+) (.*)");
 
   protected final EverquestSession session;
 
-  private static int spawnObjectCount;
-
   private final int id;
-//  private final Map<Integer, SpellEffectTimer> spellEffectTimers = new HashMap<Integer, SpellEffectTimer>();
 
-  private final Map<Integer, SpellEffectManager> spellEffectManagers = new HashMap<Integer, SpellEffectManager>();
+  private final Map<Integer, SpellEffectManager> spellEffectManagers = new HashMap<>();
 
   private String name;
   private String fullName;
@@ -57,7 +53,7 @@ public class Spawn {
 
   private long tankTime;
   private int myAgro;
-  private final LinkedList<Location> locations = new LinkedList<Location>();
+  private final LinkedList<Location> locations = new LinkedList<>();
 
   private final Date creationDate = new Date();
   private Date timeOfDeath;
@@ -65,27 +61,11 @@ public class Spawn {
   public Spawn(EverquestSession session, int id) {
     this.session = session;
     this.id = id;
-
-    spawnObjectCount++;
   }
 
   public Date getCreationDate() {
     return creationDate;
   }
-
-
-//  static long lastReport;
-//  @Override
-//  protected void finalize() throws Throwable {
-//    // TODO Auto-generated method stub
-//    super.finalize();
-//    spawnObjectCount--;
-//
-//    if(System.currentTimeMillis() - lastReport > 20000) {
-//      lastReport = System.currentTimeMillis();
-//      System.err.println("Active Spawn Objects: " + spawnObjectCount + "; max.memory = " + Runtime.getRuntime().maxMemory() / 1024 + "kB; total.memory = " + Runtime.getRuntime().totalMemory() / 1024 + "kB; free = " + (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 + "kB");
-//    }
-//  }
 
   public EverquestSession getSession() {
     return session;
@@ -427,7 +407,7 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
   }
 
   public Set<String> getBuffNames() {
-    Set<String> names = new HashSet<String>();
+    Set<String> names = new HashSet<>();
 
     for(SpellEffectManager manager : spellEffectManagers.values()) {
       if(manager.getDuration() > 0) {
@@ -583,7 +563,7 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     }
   }
 
-  private final HistoryValue<Integer> damageHistory = new HistoryValue<Integer>(0, 3 * 60 * 1000);
+  private final HistoryValue<Integer> damageHistory = new HistoryValue<>(0, 3 * 60 * 1000);
 
 //  private final LinkedList<HealthDataPoint> dataPoints = new LinkedList<HealthDataPoint>();
 //
@@ -805,7 +785,7 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
 
   public void updateBuffs(String buffPart) {
     if(buffPart.trim().length() > 0) {
-      Set<Integer> toBeRemoved = new HashSet<Integer>(spellEffectManagers.keySet());
+      Set<Integer> toBeRemoved = new HashSet<>(spellEffectManagers.keySet());
 
       for(String b : SPACE.split(buffPart.trim())) {
         int spellId = Integer.parseInt(b);
@@ -832,7 +812,7 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     return locations;
   }
 
-  private final List<LocationListener> locationListeners = new ArrayList<LocationListener>();
+  private final List<LocationListener> locationListeners = new ArrayList<>();
 
   public synchronized void addLocationListener(LocationListener listener) {
     if(!locations.isEmpty()) {
@@ -981,7 +961,7 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
    * @return all effects present on this spawn
    */
   public Set<Spell> getSpellEffects() {
-    Set<Spell> buffs = new HashSet<Spell>();
+    Set<Spell> buffs = new HashSet<>();
 
     for(SpellEffectManager manager : spellEffectManagers.values()) {
       if(manager.getDuration() > 0) {
@@ -1002,7 +982,7 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     return false;
   }
 
-  private Map<String, Object> data = new HashMap<String, Object>();
+  private Map<String, Object> data = new HashMap<>();
 
   public Object getUserValue(String name) {
     return data.get(name);

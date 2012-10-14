@@ -14,6 +14,7 @@ public class Log {
   private static PrintStream OUTPUT_STREAM;
   private static PrintStream ERROR_STREAM;
 
+  @SuppressWarnings("resource")
   public static void initialize(OutputStream outputStream, Level level) {
     OUTPUT_STREAM = System.out;
     ERROR_STREAM = System.err;

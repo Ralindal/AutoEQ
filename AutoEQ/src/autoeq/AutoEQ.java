@@ -64,14 +64,15 @@ public class AutoEQ {
      * Read spell data
      */
 
-    Map<Integer, SpellData> rawSpellData = new HashMap<Integer, SpellData>();
-    LineNumberReader reader = new LineNumberReader(new FileReader("spells_us.txt"));
-    String line;
+    Map<Integer, SpellData> rawSpellData = new HashMap<>();
+    try(LineNumberReader reader = new LineNumberReader(new FileReader("spells_us.txt"))) {
+      String line;
 
-    while((line = reader.readLine()) != null) {
-      String[] fields = line.split("\\^");
-      SpellData sd = new SpellData(fields);
-      rawSpellData.put(sd.getId(), sd);
+      while((line = reader.readLine()) != null) {
+        String[] fields = line.split("\\^");
+        SpellData sd = new SpellData(fields);
+        rawSpellData.put(sd.getId(), sd);
+      }
     }
 
     /*
@@ -84,7 +85,7 @@ public class AutoEQ {
      * Initialize sessions
      */
 
-    List<EverquestSession> sessions = new ArrayList<EverquestSession>();
+    List<EverquestSession> sessions = new ArrayList<>();
 
     for(int port = 7777; port < 7783; port++) {
       try {
@@ -140,7 +141,7 @@ public class AutoEQ {
     }
   }
 
-  private static final Map<String, Bot> bots = new HashMap<String, Bot>();
+  private static final Map<String, Bot> bots = new HashMap<>();
 
   public static class PulseThread implements Runnable {
     private final EverquestSession session;
@@ -167,7 +168,7 @@ public class AutoEQ {
               Me me = session.getMe();
 
               if(me != null) {
-                Map<Integer, Long> spellDurations = new HashMap<Integer, Long>();
+                Map<Integer, Long> spellDurations = new HashMap<>();
 
                 for(Spell spell : me.getSpellEffects()) {
                   SpellEffectManager manager = me.getSpellEffectManager(spell);
@@ -186,7 +187,7 @@ public class AutoEQ {
                * Update bot information for this session
                */
 
-              Set<String> botNames = new HashSet<String>();
+              Set<String> botNames = new HashSet<>();
 
               for(Bot bot : bots.values()) {
                 botNames.add(bot.getName());

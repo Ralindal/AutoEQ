@@ -21,7 +21,7 @@ public class Parser {
 
   private static final Object UNDEFINED = new Object();
 
-  private static final Map<String, Operator> OPERATORS = new HashMap<String, Operator>();
+  private static final Map<String, Operator> OPERATORS = new HashMap<>();
 
   static {
     OPERATORS.put("!", new Operator(3, Type.UNARY) {
@@ -179,7 +179,7 @@ public class Parser {
   }
 
   public static Object parse(Object root, String expr) throws SyntaxException {
-    List<Token> tokens = new ArrayList<Token>();
+    List<Token> tokens = new ArrayList<>();
     Matcher matcher = PATTERN.matcher(expr);
     int skippedStart = 0;
 
@@ -219,7 +219,7 @@ public class Parser {
       throw new SyntaxException("Token expected");
     }
 
-    final List<Object> results = new ArrayList<Object>();
+    final List<Object> results = new ArrayList<>();
     Object result = UNDEFINED;
     boolean operatorExpected = false;
 

@@ -38,14 +38,17 @@ public class InviteModule implements Module, ChatListener {
     return 9;
   }
   
+  @Override
   public List<Command> pulse() {
     return null;
   }
 
+  @Override
   public Pattern getFilter() {
     return INVITE_PATTERN;
   }
 
+  @Override
   public void match(Matcher matcher) {
     String person = matcher.group(1);
     String text = matcher.group(2);
@@ -58,6 +61,7 @@ public class InviteModule implements Module, ChatListener {
     }
   }
   
+  @Override
   public boolean isLowLatency() {
     return false;
   }

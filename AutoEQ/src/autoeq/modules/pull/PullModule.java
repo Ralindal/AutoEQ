@@ -34,7 +34,7 @@ public class PullModule implements Module {
   private static final Pattern NODE = Pattern.compile("([-0-9]+),([-0-9]+)(?:,([-0-9]+))?(?:\\|([0-9]+))?");
 
   private final EverquestSession session;
-  private final List<List<Node>> paths = new ArrayList<List<Node>>();
+  private final List<List<Node>> paths = new ArrayList<>();
   private final List<String> conditions;
   private final String validTargets;
 
@@ -67,7 +67,7 @@ public class PullModule implements Module {
     else {
       active = false;
       validTargets = "";
-      conditions = new ArrayList<String>();
+      conditions = new ArrayList<>();
     }
 
     session.addUserCommand("pulloption", Pattern.compile("(status|effect (.*)|ignoreagro ([0-9]+)|order (path|density)|zrange ([0-9]+))"), "(status|effect <method>|ignoreagro <seconds>|order <path|density>|zrange <range>)", new UserCommand() {
@@ -108,10 +108,10 @@ public class PullModule implements Module {
               paths.clear();
 
               for(String key : section) {
-                List<Node> nodes = new ArrayList<Node>();
+                List<Node> nodes = new ArrayList<>();
                 paths.add(nodes);
 
-                List<String> pathParts = new ArrayList<String>();
+                List<String> pathParts = new ArrayList<>();
 
                 pathParts.addAll(Arrays.asList(section.get(key).trim().split(" ")));
 
@@ -249,7 +249,7 @@ public class PullModule implements Module {
           List<Spawn> nearbySpawns = getSpawns(node);
 
           if(nearbySpawns.size() > 0) {
-            return new Pair<List<Node>, List<Spawn>>(path, nearbySpawns);
+            return new Pair<>(path, nearbySpawns);
           }
         }
       }
@@ -262,7 +262,7 @@ public class PullModule implements Module {
       int bestPathNo = 0;
 
       for(List<Node> path : paths) {
-        Set<Spawn> spawns = new HashSet<Spawn>();
+        Set<Spawn> spawns = new HashSet<>();
 
         for(Node node : path) {
           spawns.addAll(getSpawns(node));
@@ -282,7 +282,7 @@ public class PullModule implements Module {
         session.echo("PULL: Selected path " + bestPathNo + " with density " + bestDensity);
       }
 
-      return new Pair<List<Node>, List<Spawn>>(bestPath, new ArrayList<Spawn>(bestSpawns));
+      return new Pair<List<Node>, List<Spawn>>(bestPath, new ArrayList<>(bestSpawns));
     }
 
     return null;
@@ -386,6 +386,7 @@ public class PullModule implements Module {
     return path.get(path.size() - 1);
   }
 
+  @SuppressWarnings("unused")
   private void agroSpawn(Spawn spawn, Node node) {
     Path returnPath = new Path(session);
 
@@ -413,17 +414,13 @@ public class PullModule implements Module {
     }
   }
 
-  public int getPriority() {
-    return 0;
-  }
-
   @Override
   public boolean isLowLatency() {
     return false;
   }
 
   public List<Spawn> getSpawns(Node node) {
-    List<Spawn> spawns = new ArrayList<Spawn>();
+    List<Spawn> spawns = new ArrayList<>();
     Me me = session.getMe();
 
     for(Spawn spawn : session.getSpawns()) {

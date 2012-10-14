@@ -8,8 +8,8 @@ public class Node {
   private final int y;
   private final int z;
 
-  private final Set<Node> neighbours = new HashSet<Node>();
-  
+  private final Set<Node> neighbours = new HashSet<>();
+
   public Node(int x, int y, int z) {
     this.x = x;
     this.y = y;
@@ -45,24 +45,24 @@ public class Node {
     }
     neighbours.add(node);
   }
-  
+
   @Override
   public boolean equals(Object obj) {
     if(!(obj instanceof Node)) {
       return false;
     }
-    
+
     Node n = (Node)obj;
-    
+
     if(n.x == x && n.y == y && n.z == z) {
       return true;
     }
-    
+
     return false;
   }
-  
+
   @Override
   public int hashCode() {
-    return Float.floatToIntBits(x) ^ Float.floatToIntBits(y) ^ Float.floatToIntBits(z); 
+    return Float.floatToIntBits(x) ^ Float.floatToIntBits(y) ^ Float.floatToIntBits(z);
   }
 }

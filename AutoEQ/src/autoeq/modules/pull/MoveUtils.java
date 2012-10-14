@@ -49,7 +49,7 @@ public class MoveUtils {
     }
 
     Timer moveTimer = new Timer(1500);
-    HistoryValue<Double> distanceHistory = new HistoryValue<Double>(20000);
+    HistoryValue<Double> distanceHistory = new HistoryValue<>(20000);
     boolean moving = me.isMoving();
     boolean quickExit = false;
 

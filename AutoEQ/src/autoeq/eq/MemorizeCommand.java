@@ -13,10 +13,12 @@ public class MemorizeCommand implements Command {
     this.gem = gem;
   }
 
+  @Override
   public double getPriority() {
     return priority;
   }
 
+  @Override
   public boolean execute(EverquestSession session) {
     session.log(moduleName + ": Memorizing " + spell + " in slot " + gem);
     session.getMe().memorize(spell.getId(), gem);
