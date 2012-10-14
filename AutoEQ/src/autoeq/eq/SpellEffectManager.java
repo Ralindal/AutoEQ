@@ -101,7 +101,7 @@ public class SpellEffectManager {
   }
 
   /**
-   * The duration before this effect runs out.
+   * @return duration before this effect runs out in milliseconds
    */
   public long getDuration() {
     long duration = untilMillis - System.currentTimeMillis();

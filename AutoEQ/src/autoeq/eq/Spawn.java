@@ -26,7 +26,7 @@ public class Spawn {
   private final int id;
 //  private final Map<Integer, SpellEffectTimer> spellEffectTimers = new HashMap<Integer, SpellEffectTimer>();
 
-  private final Map<Spell, SpellEffectManager> spellEffectManagers = new HashMap<Spell, SpellEffectManager>();
+  private final Map<Integer, SpellEffectManager> spellEffectManagers = new HashMap<Integer, SpellEffectManager>();
 
   private String name;
   private String fullName;
@@ -294,6 +294,18 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
 
   public int getDeity() {
     return deity;
+  }
+
+  public boolean isCaster() {
+    return classId >= 11 && classId <= 14;
+  }
+
+  public boolean isHealer() {
+    return classId == 10 || classId == 6 || classId == 2;
+  }
+
+  public boolean isTank() {
+    return classId == 1 || classId == 3 || classId == 5;
   }
 
   public String getClassShortName() {
@@ -781,37 +793,36 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     previousHitPointsPct = hitPointsPct;
   }
 
-  protected void updateHealth(int hitPointsPct) {
+  public void updateHealth(int hitPointsPct) {
     this.hitPointsPct = hitPointsPct;
   }
 
-  protected void updateTarget(int targetId) {
+  public void updateTarget(int targetId) {
     this.targetId = targetId;
   }
 
   private static final Pattern SPACE = Pattern.compile(" ");
 
-  protected void updateBuffs(String buffPart) {
+  public void updateBuffs(String buffPart) {
     if(buffPart.trim().length() > 0) {
-      Set<Spell> toBeRemoved = new HashSet<Spell>(spellEffectManagers.keySet());
+      Set<Integer> toBeRemoved = new HashSet<Integer>(spellEffectManagers.keySet());
 
       for(String b : SPACE.split(buffPart.trim())) {
         int spellId = Integer.parseInt(b);
 
         if(spellId > 0) {
-          Spell spell = session.getSpell(spellId);
-          SpellEffectManager manager = getSpellEffectManager(spell);
-          toBeRemoved.remove(spell);
+          SpellEffectManager manager = getSpellEffectManager(spellId);
+          toBeRemoved.remove(spellId);
 
           manager.setDuration(60000);
         }
       }
 
-      for(Spell spell : toBeRemoved) {
-        SpellEffectManager manager = getSpellEffectManager(spell);
+      for(int spellId : toBeRemoved) {
+        SpellEffectManager manager = getSpellEffectManager(spellId);
 
         if(manager.isRemoveable()) {
-          spellEffectManagers.remove(spell);
+          spellEffectManagers.remove(spellId);
         }
       }
     }
@@ -925,15 +936,19 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     return timeOfDeath;
   }
 
-  public SpellEffectManager getSpellEffectManager(Spell spell) {
-    SpellEffectManager manager = spellEffectManagers.get(spell);
+  public SpellEffectManager getSpellEffectManager(int spellId) {
+    SpellEffectManager manager = spellEffectManagers.get(spellId);
 
     if(manager == null) {
-      manager = new SpellEffectManager(spell, this);
-      spellEffectManagers.put(spell, manager);
+      manager = new SpellEffectManager(session.getSpell(spellId), this);
+      spellEffectManagers.put(spellId, manager);
     }
 
     return manager;
+  }
+
+  public SpellEffectManager getSpellEffectManager(Spell spell) {
+    return getSpellEffectManager(spell.getId());
   }
 
 //  public void addSpellEffect(Spell spell) {
@@ -960,6 +975,11 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
 //    return 0;
 //  }
 
+  /**
+   * Returns all effects present on this spawn.
+   *
+   * @return all effects present on this spawn
+   */
   public Set<Spell> getSpellEffects() {
     Set<Spell> buffs = new HashSet<Spell>();
 

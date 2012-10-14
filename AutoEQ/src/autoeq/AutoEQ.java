@@ -8,10 +8,16 @@ import java.net.ConnectException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import autoeq.eq.EverquestSession;
+import autoeq.eq.Me;
+import autoeq.eq.Spawn;
+import autoeq.eq.Spell;
+import autoeq.eq.SpellEffectManager;
 import autoeq.ini.Ini2;
 
 
@@ -98,6 +104,44 @@ public class AutoEQ {
     }
   }
 
+  private static class Bot {
+    private final String name;
+    private final Map<Integer, Long> spellDurations;
+    private final int healthPct;
+    private final int targetId;
+    private final int spawnId;
+
+    public Bot(String name, int spawnId, Map<Integer, Long> spellDurations, int healthPct, int targetId) {
+      this.name = name;
+      this.spawnId = spawnId;
+      this.spellDurations = spellDurations;
+      this.healthPct = healthPct;
+      this.targetId = targetId;
+    }
+
+    public int getSpawnId() {
+      return spawnId;
+    }
+
+    public String getName() {
+      return name;
+    }
+
+    public Map<Integer, Long> getSpellDurations() {
+      return spellDurations;
+    }
+
+    public int getHealthPct() {
+      return healthPct;
+    }
+
+    public int getTargetId() {
+      return targetId;
+    }
+  }
+
+  private static final Map<String, Bot> bots = new HashMap<String, Bot>();
+
   public static class PulseThread implements Runnable {
     private final EverquestSession session;
 
@@ -109,17 +153,72 @@ public class AutoEQ {
     public void run() {
       try {
         for(;;) {
-  //      long startMillis = System.currentTimeMillis();
+          long startMillis = System.currentTimeMillis();
 
           try {
             session.pulse();
+
+            synchronized(bots) {
+
+              /*
+               * Gather information about this bot
+               */
+
+              Me me = session.getMe();
+
+              if(me != null) {
+                Map<Integer, Long> spellDurations = new HashMap<Integer, Long>();
+
+                for(Spell spell : me.getSpellEffects()) {
+                  SpellEffectManager manager = me.getSpellEffectManager(spell);
+
+                  long timeLeft = manager.getDuration();
+
+                  if(timeLeft > 0) {
+                    spellDurations.put(spell.getId(), timeLeft);
+                  }
+                }
+
+                bots.put(me.getName(), new Bot(me.getName(), me.getId(), spellDurations, me.getHitPointsPct(), me.getTarget() == null ? 0 : me.getTarget().getId()));
+              }
+
+              /*
+               * Update bot information for this session
+               */
+
+              Set<String> botNames = new HashSet<String>();
+
+              for(Bot bot : bots.values()) {
+                botNames.add(bot.getName());
+
+                Spawn botSpawn = session.getSpawn(bot.getSpawnId());
+                String buffIds = "";
+
+                for(int spellId : bot.getSpellDurations().keySet()) {
+                  if(!buffIds.isEmpty()) {
+                    buffIds += " ";
+                  }
+                  buffIds += spellId;
+                }
+
+                botSpawn.updateBuffs(buffIds);
+                botSpawn.updateHealth(bot.getHealthPct());
+                botSpawn.updateTarget(bot.getTargetId());
+              }
+
+              session.setBotNames(botNames);
+            }
           }
           catch(Exception e) {
             System.err.println("Exception occured for session " + session);
             e.printStackTrace();
           }
 
-          //System.out.println("Total runtime: " + (System.currentTimeMillis() - startMillis) + " ms");
+          long duration = System.currentTimeMillis() - startMillis;
+
+          if(duration > 20) {
+            //System.out.println(">>> Slow Pulse (" + duration + " ms) for " + session + " -- " + session.getMe());
+          }
           Thread.sleep(10);
         }
       }

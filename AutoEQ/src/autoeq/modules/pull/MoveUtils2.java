@@ -7,7 +7,7 @@ import autoeq.eq.Me;
 import autoeq.eq.Timer;
 
 public class MoveUtils2 {
-  private static final int THRESHOLD = 10;
+  private static final int THRESHOLD = 5;
 
   public static void moveBackwardsTo(EverquestSession session, float x, float y) {
     moveTo(session, x, y, false, false, null);
@@ -34,7 +34,7 @@ public class MoveUtils2 {
     float startX = me.getX();
     float startY = me.getY();
 
-    session.log("MOVE: from " + (int)startX + "," + (int)startY + " to " + (int)x + "," + (int)y + "; noStop = " + noStop + "; forwards = " + forwards);
+    session.log(String.format("MOVE: from %.2f,%.2f to %.2f,%.2f; noStop = " + noStop + "; forwards = " + forwards, startY, startX, y, x));
 
     HistoryValue<Double> distanceHistory = new HistoryValue<Double>(20000);
     boolean moveSent = false;
@@ -50,15 +50,16 @@ public class MoveUtils2 {
       }
 
       if(moveSent && moveTimer.isExpired() && distanceHistory.getValue(1000) - distance < 3.0) {
-        session.log(String.format("MOVE: not moving (%.0f,%.0f). Resetting.", me.getX(), me.getY()));
-        session.echo(String.format("MOVE: not moving (%.0f,%.0f). Resetting.", me.getX(), me.getY()));
+        session.log(String.format("MOVE: not moving (%.1f,%.1f), distance %5.2f. Resetting.", me.getX(), me.getY(), distance));
+        session.echo(String.format("MOVE: not moving (%.1f,%.1f), distance %5.2f. Resetting.", me.getX(), me.getY(), distance));
         stop(session);
         moveTimer.reset();
         moveSent = false;
       }
 
       if(!moveSent) {
-        session.doCommand(String.format("/moveto loc %.2f %.2f", y, x));
+        int moveAccuracy = distance < THRESHOLD * 2 ? THRESHOLD / 2 : THRESHOLD;
+        session.doCommand(String.format("/moveto loc %.2f %.2f mdist %d", y, x, moveAccuracy));
         moveSent = true;
       }
 

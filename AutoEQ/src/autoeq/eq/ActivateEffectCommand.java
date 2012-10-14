@@ -58,7 +58,7 @@ public class ActivateEffectCommand implements Command {
           if(spellData.getBase(i) == 100) { // 100 = 100% chance
             // Base2 is the ID of the auto cast spell
             for(Spawn target : targets) {
-              target.getSpellEffectManager(session.getSpell((int)spellData.getBase2(i))).addCastResult(castResult);
+              target.getSpellEffectManager((int)spellData.getBase2(i)).addCastResult(castResult);
             }
           }
         }

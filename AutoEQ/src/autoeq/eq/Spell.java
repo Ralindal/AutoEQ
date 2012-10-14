@@ -26,6 +26,7 @@ public class Spell {
   private final String spellType;
   private final SpellData sd;
   private final boolean isMez;
+  private final boolean isHealOverTime;
 
 //  private final Map<Integer, Boolean> willStackCache = new HashMap<Integer, Boolean>();
 //
@@ -64,6 +65,7 @@ public class Spell {
     }
 
     isMez = sd.hasAttribute(SpellData.ATTRIB_MESMERIZE);
+    isHealOverTime = sd.hasAttribute(SpellData.ATTRIB_HEAL_OVER_TIME);
   }
 
   public int getLevel() {
@@ -220,6 +222,10 @@ public class Spell {
 
   public boolean isMez() {
     return isMez;
+  }
+
+  public boolean isHealOverTime() {
+    return isHealOverTime;
   }
 
   private static final Pattern BASE_SPELL_NAME = Pattern.compile("(.*?)( +Rk\\. *(II|III))?");

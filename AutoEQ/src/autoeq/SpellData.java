@@ -5,10 +5,11 @@ import autoeq.DebuffCounter.Type;
 public class SpellData {
   public static final int ATTRIB_DAMAGE = 0;
   public static final int ATTRIB_MESMERIZE = 31;
+  public static final int ATTRIB_HEAL_OVER_TIME = 100;
   public static final int ATTRIB_MOUNT = 113;
   public static final int ATTRIB_SHRINK = 298;
   public static final int ATTRIB_AUTO_CAST = 374;
-  
+
   private final int id;
   private final String name;
   private final String messageWhenCastOnYou;
@@ -18,7 +19,7 @@ public class SpellData {
   private final int aeRange;
   private final int mana;
   private final int castTime;
-  
+
   private final float[] base = new float[12];
   private final float[] base2 = new float[12];
   private final int[] max = new int[12];
@@ -34,7 +35,7 @@ public class SpellData {
   private final int mnkLevel;
   private final int brdLevel;
   private final int shortBuff;
-  
+
   public SpellData(String[] fields) {
     this.id = Integer.parseInt(fields[0]);
     this.name = fields[1];
@@ -48,7 +49,7 @@ public class SpellData {
 //    this.durationType = Integer.parseInt(fields[16]);
 //    this.durationValue = Integer.parseInt(fields[17]);
     this.mana = toInt(fields[19]);
-    
+
     for(int i = 0; i < 12; i++) {
       base[i] = toFloat(fields[i + 20]);
       base2[i] = toFloat(fields[i + 32]);
@@ -56,7 +57,7 @@ public class SpellData {
       calc[i] = toInt(fields[i + 70]);
       attrib[i] = toInt(fields[i + 86]);
     }
-    
+
     targetType = toInt(fields[98]);
     warLevel = toInt(fields[104]);
     clrLevel = toInt(fields[105]);
@@ -66,17 +67,17 @@ public class SpellData {
     druLevel = toInt(fields[109]);
     mnkLevel = toInt(fields[110]);
     brdLevel = toInt(fields[111]);
-    
+
     shortBuff = toInt(fields[154]);
   }
-  
+
   private static float toFloat(String s) {
     if(s.trim().length() == 0) {
       return 0;
     }
     return Float.parseFloat(s);
   }
-  
+
   private static int toInt(String s) {
     if(s.trim().length() == 0) {
       return 0;
@@ -91,10 +92,10 @@ public class SpellData {
         (attrib[i] == 148 || attrib[i] == 149))) {
       return true;
     }
-    
+
     return false;
   }
-  
+
   /**
    * Returns <code>true</code> if this spell blocks the given spell.
    */
@@ -108,22 +109,22 @@ public class SpellData {
             if(sd.base[slot] < max[i]) {
               return true;
             }
-          } 
+          }
           else {
             return true;
           }
         }
       }
     }
-    
+
     return false;
   }
-  
+
   public boolean stacksWith(SpellData sd) {
     if(sd.id == id) {
       return true;
     }
-    
+
     for(int i = 0; i < 12; i++) {
       if(sd.attrib[i] == attrib[i] && !(attrib[i] == 254 || sd.attrib[i] == 254) && !(attrib[i] == 57 && sd.attrib[i] == 57) && !(attrib[i] == 311 && sd.attrib[i] == 311)) {
         if(isStackData(i) && sd.isStackData(i)) {
@@ -131,18 +132,18 @@ public class SpellData {
         }
       }
     }
-    
+
     if(blocks(sd)) {
       return false;
     }
-    
+
     if(sd.blocks(this)) {
       return false;
     }
 
     return true;
   }
-  
+
   public int getId() {
     return id;
   }
@@ -166,15 +167,15 @@ public class SpellData {
   public String getName() {
     return name;
   }
-  
+
   public int getCastTime() {
     return castTime;
   }
-  
+
   public float getBase(int index) {
     return base[index];
   }
-  
+
   public float getBase2(int index) {
     return base2[index];
   }
@@ -194,28 +195,28 @@ public class SpellData {
   public int getAERange() {
     return aeRange;
   }
-  
+
   public int getRange() {
     return range;
   }
-  
+
   public int getMana() {
     return mana;
   }
-  
+
   public boolean isShortBuff() {
     return shortBuff == -1;
   }
-  
+
   public DebuffCounter getDebuffCounters() {
     // attrib = 36 = poison
     // attrib = 35 = disease
     // attrib = 116 = curse
     // attrib = 369 = corruption
-    
+
     for(int i = 0; i < 12; i++) {
       int a = attrib[i];
-      
+
       if(a == 35) {
         return new DebuffCounter(Type.DISEASE, (int)base[i]);
       }
@@ -229,7 +230,7 @@ public class SpellData {
         return new DebuffCounter(Type.CORRUPTION, (int)base[i]);
       }
     }
-    
+
     return null;
   }
 
@@ -264,14 +265,14 @@ public class SpellData {
   public int getWarLevel() {
     return warLevel;
   }
-  
+
   public boolean hasAttribute(int attribute) {
     for(int i = 0; i < 12; i++) {
       if(getAttrib(i) == attribute) {
         return true;
       }
     }
-  
+
     return false;
   }
 }

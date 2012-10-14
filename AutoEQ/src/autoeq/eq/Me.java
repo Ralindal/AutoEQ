@@ -26,6 +26,7 @@ public class Me extends Spawn {
   private final List<Integer> lruSpellSlots = new LinkedList<Integer>();
 
   private final HistoryValue<Integer> manaHistory = new HistoryValue<Integer>(7500);
+  private final HistoryValue<Integer> dmgHistory = new HistoryValue<Integer>(10000);
 
   private final int maxSpellSlots;
 
@@ -82,6 +83,20 @@ public class Me extends Spawn {
         if("You can only cast this spell in the outdoors.".equals(matcher.group())) {
           castResult = "CAST_OUTDOOR";
         }
+      }
+    });
+
+    session.addChatListener(new ChatListener() {
+      private final Pattern PATTERN = Pattern.compile(".* YOU for ([0-9]+) points of damage\\.");
+
+      @Override
+      public Pattern getFilter() {
+        return PATTERN;
+      }
+
+      @Override
+      public void match(Matcher matcher) {
+        dmgHistory.add(Integer.parseInt(matcher.group(1)));
       }
     });
   }
@@ -447,6 +462,24 @@ public class Me extends Spawn {
     return mobsInCamp;
   }
 
+  public int getRecentDpsTaken() {
+    long tenSecondsAgo = System.currentTimeMillis() - 10 * 1000;
+    int totalDmg = 0;
+
+    for(Point<Integer> p : dmgHistory) {
+      if(p.getMillis() >= tenSecondsAgo) {
+        totalDmg += p.getValue();
+      }
+    }
+
+    return totalDmg / 10;
+  }
+
+  public int getPctRecentDpsTaken() {
+    //System.out.println(">>> pctRecentDpsTaken = " + (100 * getRecentDpsTaken() / getMaxHitPoints()));
+    return 100 * getRecentDpsTaken() / getMaxHitPoints();
+  }
+
   /**
    * @return true if the situation looks dangerous (ie, lots of mobs, named in camp)
    */
@@ -487,6 +520,16 @@ public class Me extends Spawn {
     return session.getActiveProfiles();
   }
 
+  public boolean hasHealOverTime() {
+    for(Spell spell : getSpellEffects()) {
+      if(spell.isHealOverTime()) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   public boolean hasGiftOfMana() {
     for(String name : getBuffNames()) {
       if(name.startsWith("Gift of ") && name.endsWith(" Mana")) {
@@ -515,6 +558,18 @@ public class Me extends Spawn {
     return extendedTargetIDs.size();
   }
 
+  public int getExtendedTargetCountWithinRange(int range) {
+    int count = 0;
+
+    for(int spawnId : extendedTargetIDs) {
+      if(session.getSpawn(spawnId).getDistance() <= range) {
+        count++;
+      }
+    }
+
+    return count;
+  }
+
   private static final Pattern COMMA = Pattern.compile(",");
 
   //                                                                                  1         2        3         4        5        6         7         8         9         10        11        12       13       14        15        16                17                 18                                  20
@@ -523,6 +578,8 @@ public class Me extends Spawn {
   // (?: TB\\[([0-9: ]+)\\])?  <-- sometimes result is TB]... bugged.
 
   protected void updateMe(String info) {
+    dmgHistory.add(0);
+
     Matcher matcher = PATTERN.matcher(info);
 
     // Changes: Added after 15, stand state

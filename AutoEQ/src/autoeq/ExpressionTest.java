@@ -36,7 +36,10 @@ public class ExpressionTest {
     System.out.println(Parser.parse(root, "(target.mana > 95 || target.names contains \"Testchar Cleric2\")"));
 
 //    Parser.parse(root, "10 10");
-    System.out.println(Parser.parse(root, "me.isExtendedTarget(target) || (target == me && target.mana < 99)"));
+    System.out.println(Parser.parse(root, "me.isExtendedTarget(target) || (target == me && target.mana > 99)"));
+    System.out.println(Parser.parse(root, "me.isExtendedTarget(target) || (target != me && target.mana > 99)"));
+    System.out.println(Parser.parse(root, "me.isExtendedTargetB(target) || (target == me && target.mana < 99)"));
+    System.out.println(Parser.parse(root, "me.isExtendedTargetB(target) || (target != me && target.mana < 99)"));
   }
 
 //  private static void parse(Object root, String expr) {
@@ -203,8 +206,11 @@ public class ExpressionTest {
     }
 
     public boolean isExtendedTarget(Spawn2 spawn) {
-      System.out.println(">>> called with: "+spawn);
       return false;
+    }
+
+    public boolean isExtendedTargetB(Spawn2 spawn) {
+      return true;
     }
 
     public boolean inCombat() {

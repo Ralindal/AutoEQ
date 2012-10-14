@@ -25,7 +25,7 @@ public class HistoryValue<T> implements Iterable<Point<T>> {
   }
   
   /**
-   * Returns the maximum duration of values that has been record.
+   * Returns the maximum duration of values that has been record in milliseconds.
    */
   public synchronized long getPeriod() {
     if(points.size() == 0) {

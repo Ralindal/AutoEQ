@@ -96,7 +96,7 @@ public class EverquestSession {
 
     System.out.println("Sending username");
 
-    Thread.sleep(500);
+    Thread.sleep(300);
 
     writer.println(username);
     writer.flush();
@@ -104,7 +104,7 @@ public class EverquestSession {
     while(!(reader.read() == ':')) {
     }
 
-    Thread.sleep(500);
+    Thread.sleep(300);
 
     System.out.println("Sending password");
 
@@ -181,6 +181,11 @@ public class EverquestSession {
     }
 
     return bots;
+  }
+
+  public void setBotNames(Set<String> names) {
+    botNames.clear();
+    botNames.addAll(names);
   }
 
   public Set<String> getBotNames() {
@@ -325,62 +330,65 @@ public class EverquestSession {
 //          }
 //        });
 
-        List<Command> commands = new ArrayList<Command>();
-        getMe().unlockAllSpellSlots();
+        if(getMe() != null) {
+          List<Command> commands = new ArrayList<Command>();
 
-        /*
-         * Run modules
-         */
-        for(Module module : modules) {
-          activeModule = module;
+          getMe().unlockAllSpellSlots();
 
-          if(module.isLowLatency() || fullUpdate) {
-            startTimer("Module " + module.getClass().getSimpleName());
-            List<Command> newCommands = module.pulse();
-            endTimer("Module " + module.getClass().getSimpleName());
+          /*
+           * Run modules
+           */
+          for(Module module : modules) {
+            activeModule = module;
 
-            if(newCommands != null) {
-              commands.addAll(newCommands);
+            if(module.isLowLatency() || fullUpdate) {
+              startTimer("Module " + module.getClass().getSimpleName());
+              List<Command> newCommands = module.pulse();
+              endTimer("Module " + module.getClass().getSimpleName());
+
+              if(newCommands != null) {
+                commands.addAll(newCommands);
+              }
             }
           }
+
+          startTimer("Commands");
+
+          /*
+           * Sorts the commands on priority, but respects the original order of the Commands that
+           * have the same priorities.
+           */
+
+          Collections.sort(commands, new Comparator<Command>() {
+            @Override
+            public int compare(Command o1, Command o2) {
+              double d = o1.getPriority() - o2.getPriority();
+
+              if(d < 0) {
+                return -1;
+              }
+              else if(d > 0) {
+                return 1;
+              }
+
+              return 0;
+            }
+          });
+
+          // This locks out all commands, since commands can be anything this might be a bit too much.
+          if(castLockEndMillis < System.currentTimeMillis()) {
+  //          for(Command command : commands) {
+  //            log(command.getPriority() + " : " + command);
+  //          }
+
+            for(Command command : commands) {
+              command.execute(this);
+              break;
+            }
+          }
+
+          endTimer("Commands");
         }
-
-        startTimer("Commands");
-
-        /*
-         * Sorts the commands on priority, but respects the original order of the Commands that
-         * have the same priorities.
-         */
-
-        Collections.sort(commands, new Comparator<Command>() {
-          @Override
-          public int compare(Command o1, Command o2) {
-            double d = o1.getPriority() - o2.getPriority();
-
-            if(d < 0) {
-              return -1;
-            }
-            else if(d > 0) {
-              return 1;
-            }
-
-            return 0;
-          }
-        });
-
-        // This locks out all commands, since commands can be anything this might be a bit too much.
-        if(castLockEndMillis < System.currentTimeMillis()) {
-//          for(Command command : commands) {
-//            log(command.getPriority() + " : " + command);
-//          }
-
-          for(Command command : commands) {
-            command.execute(this);
-            break;
-          }
-        }
-
-        endTimer("Commands");
       }
     }
     catch(ZoningException e) {
@@ -422,7 +430,7 @@ public class EverquestSession {
               containsAllSpawns = true;
             }
             if(line.startsWith("#Z")) {
-              System.err.println("-------ZONING-------");
+              // System.err.println("-------ZONING-------");
               zoning = true;
             }
             dataBurst.add(line);
@@ -443,14 +451,14 @@ public class EverquestSession {
 
       if(!(dataBurst.get(0).startsWith("#F") || dataBurst.get(0).startsWith("#M"))) {
         // Discard this burst as it contains no valid start
-        logErr("Discarding a databurst, starts with: " + dataBurst.get(0));
+        //logErr("Discarding a databurst, starts with: " + dataBurst.get(0));
         continue;
       }
 
       if(!zoning) {
         startTimer("PDB2 first pass");
 
-        botNames.clear();
+        //botNames.clear();
         groupMemberNames.clear();
 
         for(String line : dataBurst) {
@@ -458,7 +466,7 @@ public class EverquestSession {
             Matcher matcher = BOT_PATTERN.matcher(line);
 
             if(matcher.matches()) {
-              botNames.add(matcher.group(1));
+              //botNames.add(matcher.group(1));
             }
           }
           else if(line.startsWith("#G ")) {
