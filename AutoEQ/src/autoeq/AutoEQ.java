@@ -193,18 +193,21 @@ public class AutoEQ {
                 botNames.add(bot.getName());
 
                 Spawn botSpawn = session.getSpawn(bot.getSpawnId());
-                String buffIds = "";
 
-                for(int spellId : bot.getSpellDurations().keySet()) {
-                  if(!buffIds.isEmpty()) {
-                    buffIds += " ";
+                if(botSpawn != null) {
+                  String buffIds = "";
+
+                  for(int spellId : bot.getSpellDurations().keySet()) {
+                    if(!buffIds.isEmpty()) {
+                      buffIds += " ";
+                    }
+                    buffIds += spellId;
                   }
-                  buffIds += spellId;
-                }
 
-                botSpawn.updateBuffs(buffIds);
-                botSpawn.updateHealth(bot.getHealthPct());
-                botSpawn.updateTarget(bot.getTargetId());
+                  botSpawn.updateBuffs(buffIds);
+                  botSpawn.updateHealth(bot.getHealthPct());
+                  botSpawn.updateTarget(bot.getTargetId());
+                }
               }
 
               session.setBotNames(botNames);
