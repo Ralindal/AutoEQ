@@ -786,7 +786,7 @@ public class EverquestSession {
         unprocessedDataBurstCount++;
       }
       if(chatLines.size() >= 1000 && chatLines.size() % 1000 == 0) {
-        System.err.println("WARNING: Chat line buffer contains " + chatLines.size() + " lines (unprocessed bursts = " + unprocessedDataBurstCount +")!");
+        System.err.println("WARNING: Chat line buffer contains " + chatLines.size() + " lines (unprocessed bursts = " + unprocessedDataBurstCount +", + " + getMe() + ")!");
         if(chatLines.size() >= 100000) {
           System.err.println("WARNING: Discarding all lines to prevent running out of memory");
           chatLines.clear();
