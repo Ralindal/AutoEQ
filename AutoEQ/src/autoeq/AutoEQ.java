@@ -194,7 +194,7 @@ public class AutoEQ {
 
                 Spawn botSpawn = session.getSpawn(bot.getSpawnId());
 
-                if(botSpawn != null) {
+                if(botSpawn != null && !botSpawn.isMe()) {
                   String buffIds = "";
 
                   for(int spellId : bot.getSpellDurations().keySet()) {
