@@ -275,7 +275,6 @@ public class EverquestSession {
 
           log("USERCMD: " + cmd);
 
-          // TODO concurrentmod exception here
           for(String s : userCommands.keySet()) {
             if(cmd.equals(s) || cmd.startsWith(s + " ")) {
               UserCommandWrapper userCommandWrapper = userCommands.get(s);
@@ -287,6 +286,8 @@ public class EverquestSession {
               else {
                 doCommand("/echo JB: syntax error, use: " + s + " " + userCommandWrapper.helpText);
               }
+
+              break;
             }
           }
         }
