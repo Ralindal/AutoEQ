@@ -6,6 +6,7 @@ public class SpellEffectManager {
   private final Spawn spawn;
 
   private long untilMillis;
+  private long lastCastMillis;
   private boolean unremovable;
   private boolean unupdatable;
 
@@ -23,6 +24,7 @@ public class SpellEffectManager {
 
   public void addCastResult(String result) {
     lastCastWasSuccess = false;
+    lastCastMillis = System.currentTimeMillis();
 
     if(result.equals("CAST_SUCCESS")) {
       lastCastWasSuccess = true;
@@ -74,7 +76,7 @@ public class SpellEffectManager {
       //System.err.println("Adding timer for " + spell + " : " + spell.getDuration());
       untilMillis = System.currentTimeMillis() + spell.getDuration() * 1000;
       unremovable = true;
-      unupdatable = true;
+      unupdatable = false;
     }
     else if(spell.getDuration() > 0) {
       // session.echo("Adding lockout of " + spell.getDuration() + "s for " + spell);
@@ -98,6 +100,10 @@ public class SpellEffectManager {
    */
   public long getTotalDuration() {
     return (long)castCount * (spell.getDuration() * 1000 + 6000) - (lastCastWasSuccess ? getDuration() : 0);
+  }
+
+  public long getLastCastMillis() {
+    return lastCastMillis;
   }
 
   /**

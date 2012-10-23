@@ -223,14 +223,9 @@ public class Me extends Spawn {
   }
 
   public String activeEffect(Effect effect, Spawn target) {
-//    if(isBard()) {
-//      if(effect instanceof SongEffect) {
-//        return bardCast((SongEffect)effect, target);
-//      }
-//      else {
-//        session.doCommand("/stopcast");
-//      }
-//    }
+    if(isBard()) {
+      session.doCommand("/stopcast");
+    }
 
     String casting = effect.getCastingLine();
 
@@ -274,12 +269,12 @@ public class Me extends Spawn {
         updateLRUSlots(getGem(effect.getSpell()));
       }
 
-      if(isBard()) {
-        session.delay(200);
-        session.doCommand("/stopcast");
-      }
-
       lastCastMillis = System.currentTimeMillis();
+
+//      if(isBard()) {
+//        session.doCommand("/stopcast");
+//        session.delay(200);
+//      }
 
       for(int i = 0; i < 20; i++) {
         String[] results = session.translate("${Cast.Stored};${Cast.Result}").split(";");
@@ -435,10 +430,10 @@ public class Me extends Spawn {
    * @return
    */
 //  public int getGroupAvgHealerMana() {
-//    List<Integer> healths = new ArrayList<Integer>(6);
+//    List<Integer> healths = new ArrayList<>(6);
 //
 //    for(Spawn member : session.getGroupMembers()) {
-//      healths.add(member.getHitPointsPct());
+//      healths.add(member.getManaPct());
 //    }
 //
 //    Collections.sort(healths);
@@ -616,10 +611,7 @@ public class Me extends Spawn {
         this.gemReadyList[i] = gemState[1].equals("1");
       }
 
-      updateBuffs(matcher.group(18).trim() + " " + matcher.group(20).trim());  // Buffs
-
-      matcher.group(19); // Durations
-      matcher.group(21); // Short Buffs Durations
+      updateBuffs(matcher.group(18).trim() + " " + matcher.group(20).trim(), matcher.group(19).trim() + " " + matcher.group(21).trim());  // Buffs
 
       extendedTargetIDs.clear();
 

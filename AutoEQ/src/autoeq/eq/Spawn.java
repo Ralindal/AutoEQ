@@ -16,7 +16,7 @@ import autoeq.SpellData;
 
 // TODO Spawns are too permanent... EQ likely reuses id's
 public class Spawn {
-  private static final Pattern PATTERN = Pattern.compile("#S-[0-9]+ [0-9]+ ([0-9]+) ([-0-9]+) ([0-9]+) ([-0-9]+) ([0-9]+) ([0-9]+) ([-0-9\\.]+),([-0-9\\.]+),([-0-9\\.]+) ([-0-9\\.]+) ([-0-9\\.]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([0-9]+) (.*)");
+  private static final Pattern PATTERN = Pattern.compile("#S-[0-9]+ [0-9]+ ([0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([0-9]+) ([-0-9]+) ([0-9]+) ([0-9]+) ([-0-9\\.]+),([-0-9\\.]+),([-0-9\\.]+) ([-0-9\\.]+) ([-0-9\\.]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([0-9]+) ([-0-9]+) (.*)");
 
   protected final EverquestSession session;
 
@@ -441,6 +441,10 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     return false;
   }
 
+  public boolean isNamedMob() {
+    return fullName.startsWith("#");
+  }
+
   public Spell getCastedSpell() {
     return casting;
   }
@@ -808,6 +812,37 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     }
   }
 
+  public void updateBuffs(String buffPart, String durationPart) {
+    if(buffPart.trim().length() > 0) {
+      Set<Integer> toBeRemoved = new HashSet<>(spellEffectManagers.keySet());
+      String[] buffIds = SPACE.split(buffPart.trim());
+      String[] buffDurations = SPACE.split(durationPart.trim());
+
+      for(int i = 0; i < buffIds.length; i++) {
+        int spellId = Integer.parseInt(buffIds[i]);
+        int duration = Integer.parseInt(buffDurations[i]);
+
+        if(spellId > 0) {
+          SpellEffectManager manager = getSpellEffectManager(spellId);
+          toBeRemoved.remove(spellId);
+
+          if(duration < 0) {
+            duration = 10; // in ticks
+          }
+          manager.setDuration(duration * 6000);
+        }
+      }
+
+      for(int spellId : toBeRemoved) {
+        SpellEffectManager manager = getSpellEffectManager(spellId);
+
+        if(manager.isRemoveable()) {
+          spellEffectManagers.remove(spellId);
+        }
+      }
+    }
+  }
+
   public List<Location> getLastLocations() {
     return locations;
   }
@@ -870,10 +905,10 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     if(matcher.matches()) {
       boolean wasAlive = isAlive();
 
-      this.type = Integer.parseInt(matcher.group(5));
+      this.type = Integer.parseInt(matcher.group(7));
 
       // Pattern.compile(regex).matcher(this).replaceAll(replacement)
-      this.fullName = matcher.group(19);
+      this.fullName = matcher.group(22);
       String name = CLEAN_UNDERSCORE.matcher(CLEAN_NUMBERS.matcher(fullName).replaceAll("")).replaceAll(" ");
 //      String name = fullName.replaceAll("[#0-9]", "").replaceAll("_", " ");
 
@@ -887,19 +922,22 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
         // Health returned for Me is actual hitpoints, not a percentage
         updateHealth(Integer.parseInt(matcher.group(2)));
       }
-      this.classId = Integer.parseInt(matcher.group(3));
-      this.deity = Integer.parseInt(matcher.group(4));
-      this.standState = Integer.parseInt(matcher.group(6));
-      updateLocation(Float.parseFloat(matcher.group(7)), Float.parseFloat(matcher.group(8)), Float.parseFloat(matcher.group(9)), Float.parseFloat(matcher.group(10)));
-//      this.speedRun = Float.parseFloat(matcher.group(11));
-      this.masterId = Integer.parseInt(matcher.group(13));
-      this.petId = Integer.parseInt(matcher.group(14));
-      this.bodyType = Integer.parseInt(matcher.group(15));
-      this.race = Integer.parseInt(matcher.group(16));
-      this.lineOfSight = matcher.group(17).equals("1");
-      this.mercenary = matcher.group(18).equals("1");
+      // TODO 3 = mana
+      // TODO 4 = endurance
+      this.classId = Integer.parseInt(matcher.group(5));
+      this.deity = Integer.parseInt(matcher.group(6));
+      this.standState = Integer.parseInt(matcher.group(8));
+      updateLocation(Float.parseFloat(matcher.group(9)), Float.parseFloat(matcher.group(10)), Float.parseFloat(matcher.group(11)), Float.parseFloat(matcher.group(12)));
+//      this.speedRun = Float.parseFloat(matcher.group(13));
+      this.masterId = Integer.parseInt(matcher.group(15));
+      this.petId = Integer.parseInt(matcher.group(16));
+      this.bodyType = Integer.parseInt(matcher.group(17));
+      this.race = Integer.parseInt(matcher.group(18));
+      this.lineOfSight = matcher.group(19).equals("1");
+      this.mercenary = matcher.group(20).equals("1");
+      matcher.group(21);  // TODO targetOfTarget
 
-      int castingID = Integer.parseInt(matcher.group(12));
+      int castingID = Integer.parseInt(matcher.group(14));
 
       casting = castingID <= 0 ? null : session.getSpell(castingID);
 

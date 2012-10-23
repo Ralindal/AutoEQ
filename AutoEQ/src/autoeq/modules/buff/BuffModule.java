@@ -20,6 +20,7 @@ import autoeq.eq.Module;
 import autoeq.eq.Spawn;
 import autoeq.eq.SpawnType;
 import autoeq.eq.Spell;
+import autoeq.eq.SpellEffectManager;
 import autoeq.eq.SpellLine;
 import autoeq.eq.TargetType;
 import autoeq.ini.Section;
@@ -148,16 +149,20 @@ public class BuffModule implements Module {
 
 
                   if(effect.getType() == Type.SONG) {
-                    long millisLeft = session.getMe().getSpellEffectManager(spell).getDuration();
+                    SpellEffectManager manager = session.getMe().getSpellEffectManager(spell);
+                    long millisLeft = manager.getDuration();
 
-                    if(millisLeft < 9500) {
+                    if(millisLeft <= 6000) { // One Tick
+                      long currentTime = System.currentTimeMillis();
+                      long timeSinceLastCast = (currentTime - manager.getLastCastMillis()) / 1000;
+
                       float bardSongPriority = 0.75f;
 
-                      if(millisLeft > 0) {
-                        bardSongPriority = 0.5f / millisLeft;
+                      if(timeSinceLastCast > 0) {
+                        bardSongPriority = 0.5f / timeSinceLastCast;
                       }
 
-                      // System.out.println(effect.getSpell() + " " + (buffLine.getPriority() + bardSongPriority) + " " + session.getMe().inCombat());
+//                      System.out.println(millisLeft + " -- " + effect.getSpell() + " " + (buffLine.getPriority() + bardSongPriority) + " " + session.getMe().inCombat() + " READY: " + effect.isReady());
                       buffs.add(new Buff(effect, buffLine, buffLine.getPriority() + bardSongPriority, potentialTarget));
                     }
                   }
