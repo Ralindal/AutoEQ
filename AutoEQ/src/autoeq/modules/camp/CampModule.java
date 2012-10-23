@@ -114,7 +114,12 @@ public class CampModule implements Module {
         if(campMode == CampMode.CAMP) {
           if(campSet) {
             if(!me.isMoving() && !me.isCasting()) {
-              if((!me.inCombat() && me.getDistance(campX, campY) > radius) || campZoneId != session.getZoneId() || me.getDistance(campX, campY) > maxRadius) {
+              if(campZoneId != session.getZoneId()) {
+                session.log("CAMP: We zoned.  Turning camp off.");
+                campSet = false;
+                campMode = CampMode.NONE;
+              }
+              else if((!me.inCombat() && me.getDistance(campX, campY) > radius) || me.getDistance(campX, campY) > maxRadius) {
                 if(me.getDistance(campX, campY) > 400) {
                   session.log("CAMP: We're very far away from camp.  Resetting camp location.");
                   campSet = false;
@@ -123,7 +128,6 @@ public class CampModule implements Module {
                   session.log("CAMP: We're outside camp radius, moving back");
 
                   MoveUtils.moveBackwardsTo(session, campX, campY);
-    //              session.doCommand("/moveto loc " + campY + " " + campX);
                 }
               }
 
