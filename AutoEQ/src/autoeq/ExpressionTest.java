@@ -3,6 +3,7 @@ package autoeq;
 import java.util.Arrays;
 import java.util.Collection;
 
+import autoeq.eq.CombatState;
 import autoeq.expr.Parser;
 import autoeq.expr.SyntaxException;
 
@@ -40,6 +41,11 @@ public class ExpressionTest {
     System.out.println(Parser.parse(root, "me.isExtendedTarget(target) || (target != me && target.mana > 99)"));
     System.out.println(Parser.parse(root, "me.isExtendedTargetB(target) || (target == me && target.mana < 99)"));
     System.out.println(Parser.parse(root, "me.isExtendedTargetB(target) || (target != me && target.mana < 99)"));
+
+    System.out.println(Parser.parse(root, "me.combatState == \"ACTIVE\""));
+    System.out.println(Parser.parse(root, "\"ACTIVE\" == me.combatState"));
+    System.out.println(Parser.parse(root, "me.combatState == me.combatState"));
+    System.out.println(Parser.parse(root, "me.combatState"));
   }
 
 //  private static void parse(Object root, String expr) {
@@ -217,6 +223,10 @@ public class ExpressionTest {
 
     public boolean inCombat() {
       return true;
+    }
+
+    public CombatState getCombatState() {
+      return CombatState.ACTIVE;
     }
 
     public int mana() {

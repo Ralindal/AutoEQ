@@ -172,8 +172,14 @@ public class Parser {
     else if(left instanceof Number) {
       return toDouble(left) == toDouble(right);
     }
+    else if(left instanceof Enum && !(right instanceof Enum)) {
+      return ((Enum<?>)left).name().equals(right.toString());
+    }
+    else if(right instanceof Enum && !(left instanceof Enum)) {
+      return ((Enum<?>)right).name().equals(left.toString());
+    }
     else {
-//      System.err.println("l/r = " + left + " / " + right);
+//      System.err.println("l/r = " + left + " / " + right + "; left.getClass = " + left.getClass().isEnum() + "; " + left.getClass().getSuperclass());
       return left.equals(right);
     }
   }
