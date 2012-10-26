@@ -4,6 +4,7 @@ import autoeq.DebuffCounter.Type;
 
 public class SpellData {
   public static final int ATTRIB_DAMAGE = 0;
+  public static final int ATTRIB_SLOW = 11;
   public static final int ATTRIB_MESMERIZE = 31;
   public static final int ATTRIB_HEAL_OVER_TIME = 100;
   public static final int ATTRIB_MOUNT = 113;
@@ -267,12 +268,16 @@ public class SpellData {
   }
 
   public boolean hasAttribute(int attribute) {
+    return getAttributeIndex(attribute) >= 0;
+  }
+
+  public int getAttributeIndex(int attribute) {
     for(int i = 0; i < 12; i++) {
       if(getAttrib(i) == attribute) {
-        return true;
+        return i;
       }
     }
 
-    return false;
+    return -1;
   }
 }
