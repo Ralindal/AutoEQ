@@ -46,7 +46,7 @@ public class Path implements LocationListener {
       double newAngle = Math.toDegrees(Math.atan2(location.y - last1.y, location.x - last1.x));
       double angleDiff = angleDiff(oldAngle, newAngle);
 
-      if(ptLineDist < 3 && location.distance(last2) < 20 && angleDiff < 20) {
+      if(ptLineDist < 3 && location.distance(last2) < 40 && angleDiff < 20) {
         locations.removeLast();
       }
     }
