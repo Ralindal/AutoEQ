@@ -23,6 +23,7 @@ import autoeq.eq.Spawn;
 import autoeq.eq.SpawnType;
 import autoeq.eq.SpellLine;
 import autoeq.ini.Section;
+import autoeq.modules.target.TargetModule;
 
 import com.google.inject.Inject;
 
@@ -31,10 +32,12 @@ public class HealModule implements Module {
   private final EverquestSession session;
   private final List<Heal> heals = new ArrayList<>();
   private final int maxHealRange;
+  private final TargetModule targetModule;
 
   @Inject
-  public HealModule(EverquestSession session) {
+  public HealModule(EverquestSession session, TargetModule targetModule) {
     this.session = session;
+    this.targetModule = targetModule;
     this.maxHealRange = Integer.parseInt(session.getIni().getSection("General").getDefault("MaxHealRange", "100"));
 
     for(Section section : session.getIni()) {
@@ -135,14 +138,17 @@ public class HealModule implements Module {
 //        session.log("Health Status: " + dbg);
 //      }
 
+      Spawn mainAssist = targetModule.getMainAssist();
+      Spawn mainTarget = mainAssist == null ? null : mainAssist.getTarget();
+
       for(Heal heal : heals) {
         if(session.isProfileActive(heal.getProfile())) {
           for(Spawn target : targets) {
 
 //            System.out.println("Heal Target -> " + target);
             if(TargetPattern.isValidTarget(heal.validTargets, target)) {
-              if(ExpressionEvaluator.evaluate(heal.getConditions(), new ExpressionRoot(session, target, null, heal.getEffect()), this)) {
-                if(heal.getEffect().getSpell().isValidTarget(target)) {
+              if(ExpressionEvaluator.evaluate(heal.getConditions(), new ExpressionRoot(session, target, mainTarget, heal.getEffect()), this)) {
+                if(heal.getEffect().getSpell().isWithinLevelRestrictions(target)) {
                   if(target.willStack(heal.getEffect().getSpell())) {
                     if(target.getDistance() <= maxHealRange) {
                       if(ActivateEffectCommand.checkEffect(heal.getEffect(), target)) {

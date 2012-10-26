@@ -144,7 +144,7 @@ public class BuffModule implements Module {
               for(Effect effect : effectSet.getEffects()) {  // All spells are from book
                 Spell spell = effect.getSpell();
 
-                if(((effect.getType() != Type.SPELL && effect.getType() != Type.SONG) || (spell.isValidTarget(potentialTarget) && spell.getLevel() <= session.getMe().getLevel()))) {  // Level check here in case of delevelling (but spell is still in book)
+                if(((effect.getType() != Type.SPELL && effect.getType() != Type.SONG) || (spell.isWithinLevelRestrictions(potentialTarget) && spell.getLevel() <= session.getMe().getLevel()))) {  // Level check here in case of delevelling (but spell is still in book)
 //                  System.out.println(potentialTarget + " is a valid target for " + spell);
 
 
@@ -196,6 +196,8 @@ public class BuffModule implements Module {
         for(EffectSet effectSet : m.keySet()) {
           List<Spawn> targets = m.get(effectSet);
 
+          // TODO number of targets should be adjustable, depending on buff
+          // TODO take into account targets where the buff will soon expire (careful with the 1 minute trick!)
           if((targets.size() > 2 && effectSet.getGroup() != null) || effectSet.getSingle() == null) {  // Cast group spell if more than two targets or when only group spell is available
             buffs.add(new Buff(effectSet.getGroup(), buffLine, buffLine.getPriority(), targets.toArray(new Spawn[targets.size()])));
           }

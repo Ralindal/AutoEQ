@@ -133,13 +133,13 @@ public class DebuffModule implements Module {
                   if(!spawn.getSpellEffects().contains(effect.getSpell()) && !effect.getSpell().isEquivalent(spawn.getSpellEffects())) {
                     if(debuffLine.isValidTarget(spawn, mainTarget, effect)) {
                       if(spawn == mainTarget) {
-                        session.echo(mainTarget + "; TTL = " + spawn.getTimeToLive() + "; MyAgro = " + mainTarget.getMyAgro() + "; TankAgro = " + mainTarget.getTankAgro());
+                        session.echo(mainTarget + "; MyAgro = " + mainTarget.getMyAgro() + "; TankAgro = " + mainTarget.getTankAgro());
                       }
 
 //                      session.echo(spawn + "; TTL = " + spawn.getTimeToLive() + "; MyAgro = " + spawn.getMyAgro() + "; TankAgro = " + spawn.getTankAgro());
                       if(ActivateEffectCommand.checkEffect(effect, spawn)) {
                         if(effect.getSpell().getName().contains("Zeal")) {
-                          System.err.println("!!!! " + effect.getSpell().getRange() + "; " + effect.getSpell().isDetrimental());
+                          System.err.println(effect.getSpell().getName() + "!!!! " + effect.getSpell().getRange() + "; " + effect.getSpell().isDetrimental());
                         }
 
                         List<Spawn> targets = targetLists.get(debuffLine);
@@ -223,6 +223,7 @@ public class DebuffModule implements Module {
 
       valid = valid && (!mainOnly || target.equals(mainTarget));
       valid = valid && target.inLineOfSight();
+      valid = valid && effect.getSpell().isWithinLevelRestrictions(target);
 
       if(valid) {
         valid = ExpressionEvaluator.evaluate(conditions, new ExpressionRoot(target.getSession(), target, mainTarget, effect), this);

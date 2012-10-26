@@ -25,7 +25,8 @@ public class Spell {
   private final String targetType;   // self, group v1, group v2
   private final String spellType;
   private final SpellData sd;
-  private final boolean isMez;
+  private final boolean isSlow;
+  private final int maxMezLevel;
   private final boolean isHealOverTime;
 
 //  private final Map<Integer, Boolean> willStackCache = new HashMap<Integer, Boolean>();
@@ -64,8 +65,11 @@ public class Spell {
       throw new RuntimeException("Unable to find spell with ID " + id, e);
     }
 
-    isMez = sd.hasAttribute(SpellData.ATTRIB_MESMERIZE);
+    int mezIndex = sd.getAttributeIndex(SpellData.ATTRIB_MESMERIZE);
+
+    maxMezLevel = mezIndex >= 0 ? sd.getMax(mezIndex) : 0;
     isHealOverTime = sd.hasAttribute(SpellData.ATTRIB_HEAL_OVER_TIME);
+    isSlow = sd.hasAttribute(SpellData.ATTRIB_SLOW);
   }
 
   public int getLevel() {
@@ -82,23 +86,32 @@ public class Spell {
   /**
    * Checks if spell would hold on the target.
    */
-  public boolean isValidTarget(Spawn target) {
-    if(getDuration() == 0) {
-      return true;
-    }
+  public boolean isWithinLevelRestrictions(Spawn target) {
+    if(isDetrimental()) {
+      if(isMez() && target.getLevel() > maxMezLevel) {
+        return false;
+      }
 
-    if(target.getLevel() > 60 || getLevel() < 50) {
       return true;
     }
-    // For Level 50 - 65 spells there is a special level based rule based on:
-    // Assumption: Clarity II(54) holds on level 42
-    // Assumption: Aegolism(60) holds on Level 45
-    // Assumption: Virtue(62) holds on Level 46
-    if(getLevel() < 66 && 50 + (target.getLevel() - 40) * 2 >= getLevel()) {
-      return true;
-    }
+    else {
+      if(getDuration() == 0) {
+        return true;
+      }
 
-    return false;
+      if(target.getLevel() > 60 || getLevel() < 50) {
+        return true;
+      }
+      // For Level 50 - 65 spells there is a special level based rule based on:
+      // Assumption: Clarity II(54) holds on level 42
+      // Assumption: Aegolism(60) holds on Level 45
+      // Assumption: Virtue(62) holds on Level 46
+      if(getLevel() < 66 && 50 + (target.getLevel() - 40) * 2 >= getLevel()) {
+        return true;
+      }
+
+      return false;
+    }
   }
 
 //  public boolean willStack(Spell spell) {
@@ -220,8 +233,12 @@ public class Spell {
     return sd;
   }
 
+  public boolean isSlow() {
+    return isSlow;
+  }
+
   public boolean isMez() {
-    return isMez;
+    return maxMezLevel > 0;
   }
 
   public boolean isHealOverTime() {
