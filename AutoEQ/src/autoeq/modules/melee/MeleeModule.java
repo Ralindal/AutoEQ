@@ -107,10 +107,10 @@ public class MeleeModule implements Module {
           mainTarget = session.getSpawn(mainTarget.getId());   // Regets the target by ID from the actual spawns in the zone.  If spawn depopped, then this returns null.
         }
 
-        if((mainTarget == null && attacking) || (mainTarget != null && (mainTarget.getType() != SpawnType.NPC || mainTarget.getDistance() > range))) {
-          session.echo("MELEE: Holding (attacking = " + attacking + "; mainTarget = " + mainTarget + ")");
+        if((mainTarget == null && (attacking || meleeStatus.contains("ENGAGED"))) || (mainTarget != null && (mainTarget.getType() != SpawnType.NPC || mainTarget.getDistance() > range))) {
+          session.echo("MELEE: Holding (was attacking = " + attacking + "; mainTarget = " + mainTarget + ")");
           mainTarget = null;
-          session.doCommand("/attack off");
+          session.doCommand("/melee reset");
 
           if(attacking) {
             session.unlockMovement();
