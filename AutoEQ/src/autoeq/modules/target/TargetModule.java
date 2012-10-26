@@ -44,6 +44,10 @@ public class TargetModule implements Module {
 
     Section section = session.getIni().getSection("Assist");
 
+    if(section == null) {
+      section = session.getIni().getSection("Target");
+    }
+
     active = section.getDefault("Active", "true").toLowerCase().equals("true");
     targetSelection = section.getDefault("Mode", "assist");
     validTargets = section.getDefault("ValidTargets", "war pal shd mnk rog ber rng bst brd clr shm dru enc mag nec wiz pet");
@@ -207,6 +211,18 @@ public class TargetModule implements Module {
   private long lastAssistMillis;
   private Spawn lastMainTarget;
   private Spawn lastAgroTarget;
+
+  public Spawn getMainAssist() {
+    for(String mainAssist : names) {
+      Spawn spawn = session.getSpawn(mainAssist);
+
+      if(spawn != null && spawn.getDistance() < 150) {
+        return spawn;
+      }
+    }
+
+    return null;
+  }
 
   public Spawn getFromAssist() {
     boolean haveBots = false;
