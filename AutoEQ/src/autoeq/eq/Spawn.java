@@ -33,6 +33,8 @@ public class Spawn {
   private int deity;
 
   private int hitPointsPct;
+  private int manaPct;
+  private int endurancePct;
   private int level;
   private int type;
 
@@ -381,8 +383,16 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     return (float)(Math.atan2(x - other.x, y - other.y) * 180 / Math.PI);
   }
 
-  public int getHitPointsPct() {
+  public final int getHitPointsPct() {
     return hitPointsPct;
+  }
+
+  public final int getManaPct() {
+    return manaPct;
+  }
+
+  public final int getEndurancePct() {
+    return endurancePct;
   }
 
   public StandState getStandState() {
@@ -781,6 +791,14 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     this.hitPointsPct = hitPointsPct;
   }
 
+  public void updateMana(int manaPct) {
+    this.manaPct = manaPct;
+  }
+
+  public void updateEndurance(int endurancePct) {
+    this.endurancePct = endurancePct;
+  }
+
   public void updateTarget(int targetId) {
     this.targetId = targetId;
   }
@@ -826,6 +844,9 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
           SpellEffectManager manager = getSpellEffectManager(spellId);
           toBeRemoved.remove(spellId);
 
+          if(duration == 0) {
+            duration = 1;
+          }
           if(duration < 0) {
             duration = 10; // in ticks
           }
@@ -918,12 +939,14 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
 
       this.name = name;
       this.level = Integer.parseInt(matcher.group(1));
-      if(!isMe() && !isBot()) {
-        // Health returned for Me is actual hitpoints, not a percentage
+
+      if(!isMe()) {
+        // Health/Mana/End returned for Me is actual hitpoints, not a percentage
         updateHealth(Integer.parseInt(matcher.group(2)));
+        updateMana(Integer.parseInt(matcher.group(3)));
+        updateEndurance(Integer.parseInt(matcher.group(4)));
       }
-      // TODO 3 = mana
-      // TODO 4 = endurance
+
       this.classId = Integer.parseInt(matcher.group(5));
       this.deity = Integer.parseInt(matcher.group(6));
       this.standState = Integer.parseInt(matcher.group(8));
@@ -935,7 +958,12 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
       this.race = Integer.parseInt(matcher.group(18));
       this.lineOfSight = matcher.group(19).equals("1");
       this.mercenary = matcher.group(20).equals("1");
-      matcher.group(21);  // TODO targetOfTarget
+
+      Spawn target = getTarget();
+
+      if(target != null && !(target.isGroupMember() || target.isBot())) {
+        target.updateTarget(Integer.parseInt(matcher.group(21)));
+      }
 
       int castingID = Integer.parseInt(matcher.group(14));
 
@@ -1020,6 +1048,16 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     return false;
   }
 
+  public boolean isSlowed() {
+    for(Spell spell : getSpellEffects()) {
+      if(spell.isSlow()) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   private Map<String, Object> data = new HashMap<>();
 
   public Object getUserValue(String name) {
@@ -1040,7 +1078,7 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
 
   @Override
   public String toString() {
-    return "Spawn(\"" + name + "\", " + id + ", range " + (int)getDistance() + ")";
+    return "Spawn(\"" + name + "\", " + id + ", range " + (int)getDistance() + ", ttl " + getTimeToLive() + ")";
   }
 
 //  private static class HealthDataPoint {

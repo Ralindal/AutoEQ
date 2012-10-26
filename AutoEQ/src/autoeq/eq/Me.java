@@ -350,10 +350,6 @@ public class Me extends Spawn {
     return 0;
   }
 
-  public int getManaPct() {
-    return 100 * getMana() / getMaxMana();
-  }
-
   public int getMana() {
     return mana;
   }
@@ -425,21 +421,29 @@ public class Me extends Spawn {
     return healths.get(healths.size() < 3 ? healths.size() - 1 : 2);
   }
 
-  /**
-   * Special function which returns the highest health of the 3 lowest health people in the group.
-   * @return
-   */
-//  public int getGroupAvgHealerMana() {
-//    List<Integer> healths = new ArrayList<>(6);
-//
-//    for(Spawn member : session.getGroupMembers()) {
-//      healths.add(member.getManaPct());
-//    }
-//
-//    Collections.sort(healths);
-//
-//    return healths.get(healths.size() < 3 ? healths.size() - 1 : 2);
-//  }
+  public int getAvgGroupHitPointsPct() {
+    int totalPct = 0;
+
+    for(Spawn member : session.getGroupMembers()) {
+      totalPct += member.getHitPointsPct();
+    }
+
+    return totalPct / session.getGroupMembers().size();
+  }
+
+  public int getAvgGroupHealerMana() {
+    int healerCount = 0;
+    int totalMana = 0;
+
+    for(Spawn member : session.getGroupMembers()) {
+      if(member.isHealer()) {
+        totalMana += member.getManaPct();
+        healerCount++;
+      }
+    }
+
+    return healerCount == 0 ? 100 : totalMana / healerCount;
+  }
 
   public int getGroupSize() {
     return session.getGroupMembers().size();
@@ -557,7 +561,9 @@ public class Me extends Spawn {
     int count = 0;
 
     for(int spawnId : extendedTargetIDs) {
-      if(session.getSpawn(spawnId).getDistance() <= range) {
+      Spawn spawn = session.getSpawn(spawnId);
+
+      if(spawn != null && spawn.getDistance() <= range) {
         count++;
       }
     }
@@ -584,10 +590,12 @@ public class Me extends Spawn {
       this.hitPoints = Integer.parseInt(matcher.group(1));  // Current hitpoints
       updateHealth(maxHitPoints != 0 ? hitPoints * 100 / maxHitPoints : 100);
       this.mana = Integer.parseInt(matcher.group(3));  // Current mana
-      manaHistory.add(this.mana);
       this.maxMana = Integer.parseInt(matcher.group(4));  // Max mana
-      this.endurance = Integer.parseInt(matcher.group(5));  // Current endurance
+      updateMana(maxMana != 0 ? mana * 100 / maxMana : 100);
+      manaHistory.add(this.mana);
       this.maxEndurance = Integer.parseInt(matcher.group(6));  // Max endurance
+      this.endurance = Integer.parseInt(matcher.group(5));  // Current endurance
+      updateEndurance(maxEndurance != 0 ? endurance * 100 / maxEndurance : 100);
       this.weight = Integer.parseInt(matcher.group(7));
       this.xp = Integer.parseInt(matcher.group(8));
       this.aaxp = Integer.parseInt(matcher.group(9));
