@@ -63,7 +63,7 @@ public class SpellEffectManager {
       // Silenced for example
       addSpellEffect(3 * 1000);  // Wait half a tick before trying again
     }
-    else if(result.equals("CAST_NOTARGET") || result.equals("CAST_OUTOFRANGE")) {
+    else if(result.equals("CAST_INTERRUPTED") || result.equals("CAST_NOTARGET") || result.equals("CAST_OUTOFRANGE")) {
       // Do Nothing
     }
     else {
