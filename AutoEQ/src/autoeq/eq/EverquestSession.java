@@ -33,6 +33,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 
+import autoeq.BotUpdateEvent;
+import autoeq.EventHandler;
 import autoeq.EverquestModule;
 import autoeq.ExpressionEvaluator;
 import autoeq.SpellData;
@@ -629,7 +631,31 @@ public class EverquestSession {
       }
     }
 
+    Me me = getMe();
+
+    if(me != null && botUpdateHandler != null) {
+      Map<Integer, Long> spellDurations = new HashMap<>();
+
+      for(Spell spell : me.getSpellEffects()) {
+        SpellEffectManager manager = me.getSpellEffectManager(spell);
+
+        long timeLeft = manager.getDuration();
+
+        if(timeLeft > 0) {
+          spellDurations.put(spell.getId(), timeLeft);
+        }
+      }
+
+      botUpdateHandler.handle(new BotUpdateEvent(me.getName(), me.getId(), spellDurations, me.getHitPointsPct(), me.getManaPct(), me.getEndurancePct(), me.getTarget() == null ? 0 : me.getTarget().getId()));
+    }
+
     return fullUpdate;
+  }
+
+  private EventHandler<BotUpdateEvent> botUpdateHandler;
+
+  public void setBotUpdateHandler(EventHandler<BotUpdateEvent> eventHandler) {
+    this.botUpdateHandler = eventHandler;
   }
 
   private Spawn getSpawnInternal(int spawnID) {
@@ -671,11 +697,19 @@ public class EverquestSession {
   }
 
   public void log(String text) {
-    System.out.printf("%-10s " + text + "%n", "<" + charName + ">");
+    String hp = getMe() == null ? "---" : String.format("%3d", getMe().getHitPointsPct());
+    String mana = getMe() == null ? "---" : String.format("%3d", getMe().getManaPct());
+    String end = getMe() == null ? "---" : String.format("%3d", getMe().getEndurancePct());
+
+    System.out.printf("%3s/%3s/%3s %-10s " + text + "%n", hp, mana, end, "<" + charName + ">");
   }
 
   public void logErr(String text) {
-    System.err.printf("%-10s " + text + "%n", "<" + charName + ">");
+    String hp = getMe() == null ? "---" : String.format("%3d", getMe().getHitPointsPct());
+    String mana = getMe() == null ? "---" : String.format("%3d", getMe().getManaPct());
+    String end = getMe() == null ? "---" : String.format("%3d", getMe().getEndurancePct());
+
+    System.err.printf("%3s/%3s/%3s %-10s " + text + "%n", hp, mana, end, "<" + charName + ">");
   }
 
   public void setDebug(boolean debug) {
@@ -1093,7 +1127,7 @@ public class EverquestSession {
   }
 
   public Spell getCombatAbilityFromList(String name) {
-    String result = translate("${Me.CombatAbility[${Me.CombatAbility[" + name + "]}].ID} ${Me.CombatAbility[${Me.CombatAbility[" + name + " Rk. II]}].ID} ${Me.CombatAbility[${Me.CombatAbility[" + name + " Rk.II]}].ID} ${Me.CombatAbility[${Me.CombatAbility[" + name + " Rk. III]}].ID} ${Me.CombatAbility[${Me.CombatAbility[" + name + " Rk.III]}].ID}");
+    String result = translate("${Me.CombatAbility[${Me.CombatAbility[" + name + " Rk. III]}].ID} ${Me.CombatAbility[${Me.CombatAbility[" + name + " Rk.III]}].ID} ${Me.CombatAbility[${Me.CombatAbility[" + name + " Rk. II]}].ID} ${Me.CombatAbility[${Me.CombatAbility[" + name + " Rk.II]}].ID} ${Me.CombatAbility[${Me.CombatAbility[" + name + "]}].ID}");
 
     for(String s : result.split(" ")) {
       if(!s.equals("NULL")) {
