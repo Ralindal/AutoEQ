@@ -28,6 +28,8 @@ public class CampModule implements Module {
 
   private long lastFaceMillis;
 
+  private boolean maintainFellowshipCamp;
+  private long fellowshipCampExpiryTime;
   private boolean campSet;
   private CampMode campMode;
   private String campFollowName;
@@ -51,7 +53,7 @@ public class CampModule implements Module {
     maxRadius = Integer.parseInt(section.get("MaxRadius"));
     face = section.get("Face").toLowerCase();
 
-    session.addUserCommand("camp", Pattern.compile("(on|off|stay near ([A-Za-z]+)|status)"), "(on|off|status|stay near <PC name>)", new UserCommand() {
+    session.addUserCommand("camp", Pattern.compile("(on|off|stay near ([A-Za-z]+)|status|fs)"), "(on|off|status|stay near <PC name>|fs)", new UserCommand() {
       @Override
       public void onCommand(Matcher matcher) {
         if(matcher.group(1).equals("on")) {
@@ -65,14 +67,24 @@ public class CampModule implements Module {
           campMode = CampMode.NONE;
           campSet = false;
         }
+        else if(matcher.group(1).equals("fs")) {
+          maintainFellowshipCamp = !maintainFellowshipCamp;
+          fellowshipCampExpiryTime = Long.MIN_VALUE;
+        }
         else if(matcher.group(1).startsWith("stay near ")) {
           campMode = CampMode.STAY_NEAR;
           campFollowName = matcher.group(2).trim();
           campSet = false;
         }
 
+        String additionalText = "";
+
+        if(maintainFellowshipCamp) {
+          additionalText = " Maintaining fellowship camp.";
+        }
+
         if(campMode == CampMode.CAMP) {
-          session.doCommand("/echo ==> Camp is on " + String.format("(%.2f, %.2f)", campX, campY) + ".");
+          session.doCommand("/echo ==> Camp is on " + String.format("(%.2f, %.2f)", campX, campY) + "." + additionalText);
         }
         else if(campMode == CampMode.STAY_NEAR) {
           session.doCommand("/echo ==> Camp is near " + campFollowName + ".");
@@ -109,6 +121,10 @@ public class CampModule implements Module {
   public List<Command> pulse() {
     Me me = session.getMe();
 
+    if(me == null || !me.isAlive()) {
+      return null;
+    }
+
     if(session.tryLockMovement()) {
       try {
         if(campMode == CampMode.CAMP) {
@@ -129,6 +145,32 @@ public class CampModule implements Module {
 
                   MoveUtils.moveBackwardsTo(session, campX, campY);
                 }
+              }
+              else if(!me.inCombat() && maintainFellowshipCamp && fellowshipCampExpiryTime < System.currentTimeMillis()) {
+                fellowshipCampExpiryTime = System.currentTimeMillis() + 30 * 60 * 1000;
+
+                session.doCommand("/windowstate FellowshipWnd open");
+                session.doCommand("/nomodkey /notify FellowshipWnd FP_Subwindows tabselect 2");
+                session.delay(500);
+                session.doCommand("/nomodkey /notify FellowshipWnd FP_RefreshList leftmouseup");
+                session.delay(500);
+                session.doCommand("/nomodkey /notify FellowshipWnd FP_CampsiteKitList listselect 1");
+                session.delay(500);
+                session.doCommand("/nomodkey /notify FellowshipWnd FP_CampsiteKitList leftmouse 1");
+                session.delay(500);
+                session.doCommand("/nomodkey /notify FellowshipWnd FP_DestroyCampsite leftmouseup");
+
+                if(session.delay(1000, "${Window[ConfirmationDialogBox].Open}")) {
+                  session.doCommand("/nomodkey /notify ConfirmationDialogBox Yes_Button leftmouseup");
+                  session.delay(1000);
+                }
+
+                session.delay(500);
+                session.doCommand("/nomodkey /notify FellowshipWnd FP_CreateCampsite leftmouseup");
+                session.delay(500);
+                session.doCommand("/windowstate FellowshipWnd close");
+
+                session.echo("CAMP: Set new fellowship camp");
               }
 
               Spawn nearestEnemy = null;
@@ -159,12 +201,6 @@ public class CampModule implements Module {
                 }
               }
             }
-          }
-          else if(me != null) {
-            campSet = true;
-            campX = session.getMe().getX();
-            campY = session.getMe().getY();
-            campZoneId = session.getZoneId();
           }
         }
         else if(campMode == CampMode.STAY_NEAR) {
