@@ -121,7 +121,7 @@ public class CampModule implements Module {
   public List<Command> pulse() {
     Me me = session.getMe();
 
-    if(me == null || !me.isAlive()) {
+    if(!me.isAlive()) {
       return null;
     }
 
