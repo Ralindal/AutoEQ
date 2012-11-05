@@ -49,6 +49,7 @@ public class PullModule implements Module {
   private Effect pullMethod;
   private String order = "path";
   private int zrange = 50;
+  private boolean pullNameds = true;
 
   private String pullPath = "";
   private boolean active;
@@ -70,7 +71,7 @@ public class PullModule implements Module {
       conditions = new ArrayList<>();
     }
 
-    session.addUserCommand("pulloption", Pattern.compile("(status|effect (.*)|ignoreagro ([0-9]+)|order (path|density)|zrange ([0-9]+))"), "(status|effect <method>|ignoreagro <seconds>|order <path|density>|zrange <range>)", new UserCommand() {
+    session.addUserCommand("pulloption", Pattern.compile("(status|effect (.*)|ignoreagro ([0-9]+)|order (path|density)|zrange ([0-9]+)|nameds (pull|leave))"), "(status|effect <method>|ignoreagro <seconds>|order <path|density>|zrange <range>|nameds <pull|leave>)", new UserCommand() {
       @Override
       public void onCommand(Matcher matcher) {
         String option = matcher.group(1).trim();
@@ -87,8 +88,11 @@ public class PullModule implements Module {
         if(option.startsWith("zrange ")) {
           zrange = Integer.parseInt(matcher.group(5).trim());
         }
+        if(option.startsWith("nameds ")) {
+          pullNameds = matcher.group(6).trim().equals("pull");
+        }
 
-        session.echo("==> Pull options: method: " + (pullMethod == null ? "wait for agro" : pullMethod.toString()) + ", ignoreagro: " + ignoreAgroMillis / 1000 + "s, order: " + order + ", zrange: " + zrange);
+        session.echo("==> Pull options: method: " + (pullMethod == null ? "wait for agro" : pullMethod.toString()) + ", ignoreagro: " + ignoreAgroMillis / 1000 + "s, order: " + order + ", zrange: " + zrange + ", nameds: " + (pullNameds ? "pull" : "leave"));
       }
     });
 
@@ -244,11 +248,20 @@ public class PullModule implements Module {
 
   private Pair<List<Node>, List<Spawn>> selectPath() {
     if(order.equals("path")) {
+      nextPath:
       for(List<Node> path : paths) {
         for(Node node : path) {
           List<Spawn> nearbySpawns = getSpawns(node);
 
           if(nearbySpawns.size() > 0) {
+            if(!pullNameds) {
+              for(Spawn spawn : nearbySpawns) {
+                if(spawn.isNamedMob()) {
+                  continue nextPath;
+                }
+              }
+            }
+
             return new Pair<>(path, nearbySpawns);
           }
         }
