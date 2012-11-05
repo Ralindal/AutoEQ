@@ -33,7 +33,6 @@ public class MeleeModule implements Module {
   private final String validTargets;
   private final List<String> conditions;
 
-  private String targetType;
   private Spawn mainTarget;
   private int resetCount;
   private int range = 50;
@@ -48,11 +47,10 @@ public class MeleeModule implements Module {
     Section section = session.getIni().getSection("Melee");
 
     active = section.getDefault("Active", "true").toLowerCase().equals("true");
-    targetType = section.getDefault("TargetType", "assist");
     validTargets = section.getDefault("ValidTargets", "war pal shd mnk rog ber rng bst brd clr shm dru enc mag nec wiz pet");
     conditions = section.getAll("Condition");
 
-    if(targetType == null || validTargets == null) {
+    if(validTargets == null) {
       throw new RuntimeException("Melee section must contain 'TargetType' and 'ValidTargets'");
     }
 
@@ -90,7 +88,7 @@ public class MeleeModule implements Module {
           range = Integer.parseInt(matcher.group(2));
         }
 
-        session.echo("==> Melee is " + (active ? "on" : "off") + ".  Range is " + range + ".  Mode is: " + targetType + ".");
+        session.echo("==> Melee is " + (active ? "on" : "off") + ".  Range is " + range + ".");
       }
     });
   }
@@ -107,7 +105,7 @@ public class MeleeModule implements Module {
           mainTarget = session.getSpawn(mainTarget.getId());   // Regets the target by ID from the actual spawns in the zone.  If spawn depopped, then this returns null.
         }
 
-        if((mainTarget == null && (attacking || meleeStatus.contains("ENGAGED"))) || (mainTarget != null && (mainTarget.getType() != SpawnType.NPC || mainTarget.getDistance() > range))) {
+        if((mainTarget == null && (attacking || meleeStatus.contains("ENGAGED"))) || (mainTarget != null && (!mainTarget.isEnemy() || mainTarget.getDistance() > range))) {
           session.echo("MELEE: Holding (was attacking = " + attacking + "; mainTarget = " + mainTarget + ")");
           mainTarget = null;
           session.doCommand("/melee reset");
