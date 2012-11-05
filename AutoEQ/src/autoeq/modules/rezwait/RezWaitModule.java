@@ -62,6 +62,8 @@ public class RezWaitModule implements Module {
     if(deathMillis != 0) {
       long waitedMillis = System.currentTimeMillis() - deathMillis;
 
+      session.delay(500);
+
       // If dead more than an hour then camp out
       if(waitedMillis > 60 * 60 * 1000) {
         session.echo("REZWAIT: Waited for an hour, camping out.");
@@ -71,6 +73,21 @@ public class RezWaitModule implements Module {
       else if((waitedMillis / 1000) % 60 == 0) {
         session.echo("REZWAIT: " + (60 - (waitedMillis / 1000 / 60)) + " minutes left before camping out");
         session.delay(1000);
+      }
+
+      /*
+       * Auto accept rez
+       */
+
+      if(session.evaluate("${Window[ConfirmationDialogBox].Child[CD_TextOutput].Text.Find[percent) upon you.]}")) {
+        session.doCommand("/notify ConfirmationDialogBox Yes_Button leftmouseup");
+
+        if(session.delay(2500, "${Window[RespawnWnd].Open}")) {
+          session.doCommand("/nomodkey /notify RespawnWnd RW_OptionsList listselect 2");
+          session.delay(500);
+          session.doCommand("/nomodkey /notify RespawnWnd RW_SelectButton leftmouseup");
+          session.delay(500);
+        }
       }
 
       // TODO Useless now because no corpses need looting, but it blocks other commands from processing.
