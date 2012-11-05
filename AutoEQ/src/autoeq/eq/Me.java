@@ -437,12 +437,40 @@ public class Me extends Spawn {
 
     for(Spawn member : session.getGroupMembers()) {
       if(member.isHealer()) {
-        totalMana += member.getManaPct();
+        if(member.isAlive()) {
+          totalMana += member.getManaPct();
+        }
         healerCount++;
       }
     }
 
     return healerCount == 0 ? 100 : totalMana / healerCount;
+  }
+
+  public boolean isGroupNearby(int distance) {
+    Set<Spawn> groupMembers = session.getGroupMembers();
+
+    if(session.getGroupMemberNames().size() != groupMembers.size()) { // Not all in same zone
+      return false;
+    }
+
+    for(Spawn member : groupMembers) {
+      if(member.getDistance() > distance) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  public boolean isGroupAlive() {
+    for(Spawn member : session.getGroupMembers()) {
+      if(!member.isAlive()) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   public int getGroupSize() {
