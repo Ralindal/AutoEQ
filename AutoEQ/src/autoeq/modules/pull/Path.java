@@ -1,7 +1,9 @@
 package autoeq.modules.pull;
 
 import java.awt.geom.Line2D;
+import java.util.ArrayList;
 import java.util.LinkedList;
+import java.util.List;
 
 import autoeq.eq.EverquestSession;
 import autoeq.eq.Location;
@@ -27,11 +29,14 @@ public class Path implements LocationListener {
   public void playbackReverse() {
     stopRecording();
 
+    List<Location> path = new ArrayList<>();
+
     for(int i = locations.size() - 1; i >= 0; i--) {
       Location location = locations.get(i);
-      MoveUtils2.moveTowards(session, location.x, location.y);
+      path.add(location);
     }
-    MoveUtils2.stop(session);
+
+    MoveUtils2.followPath(session, path);
   }
 
   @Override
