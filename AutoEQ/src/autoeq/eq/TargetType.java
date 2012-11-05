@@ -1,5 +1,5 @@
 package autoeq.eq;
 
 public enum TargetType {
-  SINGLE, GROUP, PBAE
+  SINGLE, GROUP, PBAE, CORPSE
 }

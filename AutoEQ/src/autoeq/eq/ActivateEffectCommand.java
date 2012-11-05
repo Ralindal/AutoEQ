@@ -168,7 +168,7 @@ public class ActivateEffectCommand implements Command {
       if(spell.isDetrimental() && !target.isEnemy() && spell.getTargetType() != TargetType.PBAE) {
         return false;
       }
-      if(!spell.isDetrimental() && spell.isTargetted() && !target.isFriendly()) {
+      if(!spell.isDetrimental() && spell.isTargetted() && !target.isFriendly() && spell.getTargetType() != TargetType.CORPSE) {
         return false;
       }
     }

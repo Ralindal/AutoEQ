@@ -20,7 +20,7 @@ public class BuffLine implements Iterable<EffectSet> {
   private final String profiles;
   private final List<String> conditions;
   private final List<EffectSet> effectSets = new ArrayList<>();
-  private String name;
+  private final String name;
   private final int gem;
   private final int priority;
 
@@ -59,6 +59,10 @@ public class BuffLine implements Iterable<EffectSet> {
     }
   }
 
+  public boolean hasEffects() {
+    return !effectSets.isEmpty();
+  }
+
   public int getGem() {
     return gem;
   }
@@ -72,6 +76,18 @@ public class BuffLine implements Iterable<EffectSet> {
    */
   public boolean isValidTarget(Spawn target) {
     boolean valid = validTargets != null ? TargetPattern.isValidTarget(validTargets, target) : true;
+
+    EffectSet effectSet = effectSets.get(0);
+    TargetType targetType;
+
+    if(effectSet.getSingle() != null) {
+      targetType = effectSet.getSingle().getSpell().getTargetType();
+    }
+    else {
+      targetType = effectSet.getGroup().getSpell().getTargetType();
+    }
+
+    valid = valid && ((targetType == TargetType.CORPSE) == !target.isAlive());
 
     if(valid) {
       valid = ExpressionEvaluator.evaluate(conditions, new ExpressionRoot(target.getSession(), target, null, null), this);

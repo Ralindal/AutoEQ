@@ -31,7 +31,10 @@ public class SpellEffectManager {
       castCount++;
       cannotSee = 0;
       resist /= 2;  // when succesful, lower resistyness counter by half
-      addSpellEffect();
+
+      if(!spell.isCharm()) {  // Donot add charms because they can wear of at any time.  They donot need to be added anyway, because when succesful, no new charms will hold
+        addSpellEffect();
+      }
     }
     else if(result.equals("CAST_IMMUNE")) {
       addSpellEffect(5 * 60 * 1000);
@@ -56,7 +59,7 @@ public class SpellEffectManager {
       System.err.println("Casted shrink" + resist);
       shrunk++;
       if(shrunk >= 2) {
-        addSpellEffect(24 * 60 * 60 * 1000);
+        addPermanentSpellEffect(24 * 60 * 60 * 1000);
       }
     }
     else if(result.equals("CAST_DISTRACTED")) {
@@ -92,6 +95,13 @@ public class SpellEffectManager {
     //System.err.println("Setting until millis for " + spell + " to " + untilMillis);
     unremovable = true;
     unupdatable = false;
+  }
+
+  private void addPermanentSpellEffect(long millis) {
+    untilMillis = System.currentTimeMillis() + millis;
+    //System.err.println("Setting until millis for " + spell + " to " + untilMillis);
+    unremovable = true;
+    unupdatable = true;
   }
 
   /**
@@ -140,6 +150,10 @@ public class SpellEffectManager {
     else {
       return millis / 60000 + "m";
     }
+  }
+
+  public boolean isShrink() {
+    return shrunk > 0;
   }
 
   public boolean isRemoveable() {

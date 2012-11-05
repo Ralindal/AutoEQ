@@ -26,7 +26,9 @@ public class Spell {
   private final String spellType;
   private final SpellData sd;
   private final boolean isSlow;
-  private final int maxMezLevel;
+  private final int maxTargetLevel;
+  private final boolean isCharm;
+  private final boolean isMez;
   private final boolean isHealOverTime;
 
 //  private final Map<Integer, Boolean> willStackCache = new HashMap<Integer, Boolean>();
@@ -65,9 +67,12 @@ public class Spell {
       throw new RuntimeException("Unable to find spell with ID " + id, e);
     }
 
-    int mezIndex = sd.getAttributeIndex(SpellData.ATTRIB_MESMERIZE);
+    this.isMez = sd.hasAttribute(SpellData.ATTRIB_MESMERIZE);
+    this.isCharm = sd.hasAttribute(SpellData.ATTRIB_CHARM);
+    this.maxTargetLevel = this.isMez   ? sd.getMax(sd.getAttributeIndex(SpellData.ATTRIB_MESMERIZE)) :
+                          this.isCharm ? sd.getMax(sd.getAttributeIndex(SpellData.ATTRIB_CHARM)) :
+                                         255;
 
-    maxMezLevel = mezIndex >= 0 ? sd.getMax(mezIndex) : 0;
     isHealOverTime = sd.hasAttribute(SpellData.ATTRIB_HEAL_OVER_TIME);
     isSlow = sd.hasAttribute(SpellData.ATTRIB_SLOW);
   }
@@ -83,12 +88,24 @@ public class Spell {
     return castTime;
   }
 
+  public int getDamageOverTime() {
+    if(getDuration() > 0 && isDetrimental()) {
+      int index = sd.getAttributeIndex(SpellData.ATTRIB_DAMAGE);
+
+      if(index >= 0) {
+        return (int)-sd.getBase(index);
+      }
+    }
+
+    return 0;
+  }
+
   /**
    * Checks if spell would hold on the target.
    */
   public boolean isWithinLevelRestrictions(Spawn target) {
     if(isDetrimental()) {
-      if(isMez() && target.getLevel() > maxMezLevel) {
+      if(target.getLevel() > maxTargetLevel) {
         return false;
       }
 
@@ -180,7 +197,7 @@ public class Spell {
    */
   public boolean isTargetted() {
     //System.err.println("++isTargetted " + this + "; tt = " + targetType + "; dur = " + duration + "; brdlvl = " + session.getRawSpellData(id).getBrdLevel());
-    return !(targetType.equals("self") || (targetType.startsWith("group") && (duration == 0 || session.getMe().isBard())));
+    return targetType.equals("corpse") || !(targetType.equals("self") || (targetType.startsWith("group") && (duration == 0 || session.getMe().isBard())));
   }
 
   public String getTargetTypeAsString() {
@@ -195,6 +212,10 @@ public class Spell {
     if(targetType.equals("pb ae")) {
       return TargetType.PBAE;
     }
+    else if(targetType.equals("corpse")) {
+      return TargetType.CORPSE;
+    }
+
     return aeRange > 0.0 ? TargetType.GROUP : TargetType.SINGLE;
   }
 
@@ -238,7 +259,11 @@ public class Spell {
   }
 
   public boolean isMez() {
-    return maxMezLevel > 0;
+    return isMez;
+  }
+
+  public boolean isCharm() {
+    return isCharm;
   }
 
   public boolean isHealOverTime() {
