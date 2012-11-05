@@ -452,7 +452,26 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
   }
 
   public boolean isNamedMob() {
-    return fullName.startsWith("#");
+    String falseNameds = session.getFalseNameds();
+
+    return fullName.startsWith("#") && !name.matches(falseNameds);
+  }
+
+  public boolean isUnmezzable() {
+    return name.matches(session.getUnmezzables());
+  }
+
+  /**
+   * Pets are generally shrunk, so ex-pets can be detected by that.
+   */
+  public boolean isExPet() {
+    for(SpellEffectManager manager : spellEffectManagers.values()) {
+      if(manager.isShrink()) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   public Spell getCastedSpell() {
@@ -495,7 +514,7 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
   public int getDebuffCounters(DebuffCounter.Type type) {
     for(SpellEffectManager manager : spellEffectManagers.values()) {
       if(manager.getDuration() > 0) {
-        DebuffCounter debuffCounters = session.getRawSpellData(manager.getSpell().getId()).getDebuffCounters();
+        DebuffCounter debuffCounters = manager.getSpell().getRawSpellData().getDebuffCounters();
 
         if(debuffCounters != null && debuffCounters.getType() == type) {
           return debuffCounters.getCounters();
@@ -520,6 +539,18 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
 
   public int getCorruptionCounters() {
     return getDebuffCounters(DebuffCounter.Type.CORRUPTION);
+  }
+
+  public int getDamageOverTime() {
+    int dot = 0;
+
+    for(SpellEffectManager manager : spellEffectManagers.values()) {
+      if(manager.getDuration() > 0) {
+        dot += manager.getSpell().getDamageOverTime();
+      }
+    }
+
+    return dot;
   }
 
   public void increaseTankTime(long millis) {
@@ -940,7 +971,7 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
       this.name = name;
       this.level = Integer.parseInt(matcher.group(1));
 
-      if(!isMe()) {
+      if(!isMe() && !isBot()) {
         // Health/Mana/End returned for Me is actual hitpoints, not a percentage
         updateHealth(Integer.parseInt(matcher.group(2)));
         updateMana(Integer.parseInt(matcher.group(3)));
@@ -1078,7 +1109,7 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
 
   @Override
   public String toString() {
-    return "Spawn(\"" + name + "\", " + id + ", range " + (int)getDistance() + ", ttl " + getTimeToLive() + ")";
+    return "Spawn(\"" + name + "\", " + id + ", range " + (int)getDistance() + ", ttl " + getTimeToLive() + "(" + getMinTimeToLive() + "))";
   }
 
 //  private static class HealthDataPoint {
