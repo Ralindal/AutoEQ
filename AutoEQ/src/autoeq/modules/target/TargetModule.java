@@ -55,7 +55,7 @@ public class TargetModule implements Module {
     assistConditions = section.getAll("AssistCondition");
     names = section.getDefault("Names", "").split(",");
 
-    session.addUserCommand("target", Pattern.compile("(off|on|assist|oldest|nearest|highest_level|status|range ([0-9]+))"), "(off|assist|oldest|nearest|highest_level|status|range <range>)", new UserCommand() {
+    session.addUserCommand("target", Pattern.compile("(off|on|assist|oldest|nearest|highest_level|smart|status|range ([0-9]+))"), "(off|assist|oldest|nearest|highest_level|smart|status|range <range>)", new UserCommand() {
       @Override
       public void onCommand(Matcher matcher) {
         if(matcher.group(1).equals("off")) {
@@ -75,6 +75,9 @@ public class TargetModule implements Module {
         }
         else if(matcher.group(1).equals("highest_level")) {
           targetSelection = "highest_level";
+        }
+        else if(matcher.group(1).equals("smart")) {
+          targetSelection = "smart";
         }
         else if(matcher.group(1).startsWith("range ")) {
           range = Integer.parseInt(matcher.group(2));
@@ -145,7 +148,6 @@ public class TargetModule implements Module {
         }
 
         if(bestTarget != null && (!bestTarget.isEnemy() || (bestTarget.getDistance() > range && !me.isExtendedTarget(bestTarget)))) {
-          session.echo("TARGET: Selecting new target, old was: " + bestTarget);
           bestTarget = null;
         }
 
@@ -162,7 +164,7 @@ public class TargetModule implements Module {
             }
 
             if(bestTarget != null) {
-              session.echo("TARGET: Selected Oldest [ " + bestTarget.getName() + " ]. " + (System.currentTimeMillis() - bestTarget.getCreationDate().getTime()) / 1000 + "s old.  attacking = " + attacking + " ; melee status = " + me.getMeleeStatus());
+              session.echo("TARGET: Targetting Oldest [ " + bestTarget.getName() + " ]. " + (System.currentTimeMillis() - bestTarget.getCreationDate().getTime()) / 1000 + "s old.  attacking = " + attacking + " ; melee status = " + me.getMeleeStatus());
             }
           }
           else if(targetSelection.equals("highest_level")) {
@@ -175,7 +177,26 @@ public class TargetModule implements Module {
             }
 
             if(bestTarget != null) {
-              session.echo("TARGET: Selected Highest [ " + bestTarget.getName() + " ].  Level " + bestTarget.getLevel() + ".");
+              session.echo("TARGET: Targetting Highest [ " + bestTarget.getName() + " ].  Level " + bestTarget.getLevel() + ".");
+            }
+          }
+          else if(targetSelection.equals("smart")) {
+            int bestScore = 0;
+
+            for(Spawn target : session.getSpawns()) {
+              if((Math.abs(target.getZ() - me.getZ()) < 30 && target.getDistance(x, y) < range) || me.isExtendedTarget(target)) {
+                // First unmezzables, then named, then by level
+                int score = target.getLevel() + (target.isUnmezzable() ? 1000 : 0) + (target.isNamedMob() ? 500 : 0);
+
+                if(isValidTarget(target) && (bestTarget == null || score > bestScore)) {
+                  bestTarget = target;
+                  bestScore = score;
+                }
+              }
+            }
+
+            if(bestTarget != null) {
+              session.echo("TARGET: Targetting [ " + bestTarget.getName() + " ].  Level " + bestTarget.getLevel() + (bestTarget.isUnmezzable() ? ", Unmezzable" : "") + (bestTarget.isNamedMob() ? ", Named" : "") + ".");
             }
           }
           else if(targetSelection.equals("nearest")) {  // nearest
@@ -188,7 +209,7 @@ public class TargetModule implements Module {
             }
 
             if(bestTarget != null) {
-              session.echo("TARGET: Selected Nearest [ " + bestTarget.getName() + " ].  Level " + bestTarget.getLevel() + ".");
+              session.echo("TARGET: Targetting Nearest [ " + bestTarget.getName() + " ].  Level " + bestTarget.getLevel() + ".");
             }
           }
           else {
@@ -196,10 +217,14 @@ public class TargetModule implements Module {
           }
 
           currentTarget = bestTarget;
+
+          if(currentTarget != null) {
+            session.doCommand("/target id " + currentTarget.getId());
+          }
         }
 
         if(bestTarget != null) {
-          bestTarget.increaseTankTime(20000);  // We're assuming that when we are picking targets, we also tank them.  This may change in the future.
+          bestTarget.increaseTankTime(2000000);  // We're assuming that when we are picking targets, we also tank them.  This may change in the future.
         }
       }
     }
@@ -213,91 +238,89 @@ public class TargetModule implements Module {
   private Spawn lastAgroTarget;
 
   public Spawn getMainAssist() {
-    for(String mainAssist : names) {
-      Spawn spawn = session.getSpawn(mainAssist);
+    if(targetSelection.equals("assist")) {
+      for(String mainAssist : names) {
+        Spawn spawn = session.getSpawn(mainAssist);
 
-      if(spawn != null && spawn.getDistance() < 150) {
-        return spawn;
+        if(spawn != null && spawn.getDistance() < 150) {
+          return spawn;
+        }
       }
     }
 
-    return null;
+    return session.getMe();
   }
 
   public Spawn getFromAssist() {
     boolean haveBots = false;
 
-    for(String mainAssist : names) {
-      Spawn spawn = session.getSpawn(mainAssist);
+    Spawn mainAssist = getMainAssist();
+    Spawn target = null;
 
-      if(spawn != null && spawn.getDistance() < 150) {
-        Spawn target = null;
+    if(session.getBots().contains(mainAssist)) {
+      target = mainAssist.getTarget();
+      haveBots = true;
+    }
+    else if(lastAssistMillis + 5000 < System.currentTimeMillis() && !haveBots) {
+      boolean mobNearby = false;
 
-        if(session.getBots().contains(spawn)) {
-          target = spawn.getTarget();
-          haveBots = true;
-        }
-        else if(lastAssistMillis + 5000 < System.currentTimeMillis() && !haveBots) {
-          boolean mobNearby = false;
-
-          for(Spawn nearbySpawn : session.getSpawns()) {
-            if(nearbySpawn.isEnemy() && nearbySpawn.getDistance() < 100 && nearbySpawn.inLineOfSight()) {
-              //System.err.println("assisting cause of : " + nearbySpawn);
-              mobNearby = true;
-              break;
-            }
-          }
-
-          if(mobNearby) {
-            final String currentTarget = session.translate("${Target.ID}");
-
-            lastAssistMillis = System.currentTimeMillis();
-
-            session.doCommand("/assist " + mainAssist);
-            session.delay(500, new Condition() {
-              @Override
-              public boolean isValid() {
-                return !session.translate("${Target.ID}").equals(currentTarget);
-              }
-            });
-
-            // System.out.println("Assisting no bot (" + mainAssist + ", bots = " + session.getBots() + ")");
-
-            String result = session.translate("${Target.ID}");
-            target = result.equals("NULL") ? null : session.getSpawn(Integer.parseInt(result));
-          }
-        }
-        else {
-          target = lastMainTarget;
-        }
-
-        if(target != null && target.isEnemy()) {
-
-          /*
-           * Update agro
-           */
-
-          if(spawn.isFacing(target, 45)) {
-            if(target.equals(lastAgroTarget)) {
-              long timeSpentAgroing = System.currentTimeMillis() - lastAgroMillis;
-              target.increaseTankTime(timeSpentAgroing);
-            }
-
-            lastAgroTarget = target;
-            lastAgroMillis = System.currentTimeMillis();
-          }
-          else {
-            lastAgroTarget = null;
-          }
-
-          /*
-           * Return target
-           */
-
-          lastMainTarget = target;
-          return target;
+      for(Spawn nearbySpawn : session.getSpawns()) {
+        if(nearbySpawn.isEnemy() && nearbySpawn.getDistance() < 100 && nearbySpawn.inLineOfSight()) {
+          //System.err.println("assisting cause of : " + nearbySpawn);
+          mobNearby = true;
+          break;
         }
       }
+
+      if(mobNearby) {
+        final String currentTarget = session.translate("${Target.ID}");
+
+        lastAssistMillis = System.currentTimeMillis();
+
+        session.doCommand("/assist " + mainAssist.getName());
+        session.delay(500, new Condition() {
+          @Override
+          public boolean isValid() {
+            return !session.translate("${Target.ID}").equals(currentTarget);
+          }
+        });
+
+        // System.out.println("Assisting no bot (" + mainAssist + ", bots = " + session.getBots() + ")");
+        session.log("Assisting no bot (" + mainAssist.getName() + ", bots = " + session.getBots() + ")");
+
+        String result = session.translate("${Target.ID}");
+        target = result.equals("NULL") ? null : session.getSpawn(Integer.parseInt(result));
+      }
+    }
+    else {
+      target = lastMainTarget;
+    }
+
+    if(target != null && target.isEnemy()) {
+
+      /*
+       * Update agro
+       */
+
+      if(mainAssist.isFacing(target, 45)) {
+        if(target.equals(lastAgroTarget)) {
+          long timeSpentAgroing = System.currentTimeMillis() - lastAgroMillis;
+          target.increaseTankTime(timeSpentAgroing);
+        }
+
+        lastAgroTarget = target;
+        lastAgroMillis = System.currentTimeMillis();
+      }
+      else {
+        lastAgroTarget = null;
+      }
+
+      /*
+       * Return target
+       */
+
+      lastMainTarget = target;
+      return target;
     }
 
     return null;
