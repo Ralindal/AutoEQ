@@ -15,7 +15,8 @@ import java.util.Set;
 
 import autoeq.eq.EverquestSession;
 import autoeq.eq.Spawn;
-import autoeq.ini.Ini2;
+
+// TODO Donot pull if there's a dead group member
 
 // TODO Modules should be able to be reloaded without creating new instances
 // TODO Wildcard ignore list
@@ -59,12 +60,6 @@ public class AutoEQ {
     }
 
     /*
-     * Get global.ini
-     */
-
-    Ini2 globalIni = new Ini2(new File("global.ini"));
-
-    /*
      * Initialize sessions
      */
 
@@ -72,7 +67,7 @@ public class AutoEQ {
 
     for(int port = 7777; port < 7783; port++) {
       try {
-        EverquestSession session = new EverquestSession(rawSpellData, globalIni, "localhost", port, "root", "8192");
+        EverquestSession session = new EverquestSession(rawSpellData, new File("global.ini"), "localhost", port, "root", "8192");
 
         sessions.add(session);
         session.setBotUpdateHandler(new EventHandler<BotUpdateEvent>() {
@@ -127,17 +122,20 @@ public class AutoEQ {
 
                 Spawn botSpawn = session.getSpawn(botUpdateEvent.getSpawnId());
 
-                if(botSpawn != null && !botSpawn.isMe()) {
-                  String buffIds = "";
+                if(botSpawn != null && !botSpawn.isMe() && session.getZoneId() == botUpdateEvent.getZoneId()) {
+                  if(botUpdateEvent.getSpellDurations() != null) {
+                    String buffIds = "";
 
-                  for(int spellId : botUpdateEvent.getSpellDurations().keySet()) {
-                    if(!buffIds.isEmpty()) {
-                      buffIds += " ";
+                    for(int spellId : botUpdateEvent.getSpellDurations().keySet()) {
+                      if(!buffIds.isEmpty()) {
+                        buffIds += " ";
+                      }
+                      buffIds += spellId;
                     }
-                    buffIds += spellId;
+
+                    botSpawn.updateBuffs(buffIds);
                   }
 
-                  botSpawn.updateBuffs(buffIds);
                   botSpawn.updateHealth(botUpdateEvent.getHealthPct());
                   botSpawn.updateMana(botUpdateEvent.getManaPct());
                   botSpawn.updateEndurance(botUpdateEvent.getEndurancePct());

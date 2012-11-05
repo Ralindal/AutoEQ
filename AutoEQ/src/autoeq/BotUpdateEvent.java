@@ -10,15 +10,21 @@ public class BotUpdateEvent extends Event {
   private final int spawnId;
   private final int manaPct;
   private final int endurancePct;
+  private final int zoneId;
 
-  public BotUpdateEvent(String name, int spawnId, Map<Integer, Long> spellDurations, int healthPct, int manaPct, int endurancePct, int targetId) {
+  public BotUpdateEvent(String name, int zoneId, int spawnId, Map<Integer, Long> spellDurations, int healthPct, int manaPct, int endurancePct, int targetId) {
     this.name = name;
+    this.zoneId = zoneId;
     this.spawnId = spawnId;
     this.spellDurations = spellDurations;
     this.healthPct = healthPct;
     this.manaPct = manaPct;
     this.endurancePct = endurancePct;
     this.targetId = targetId;
+  }
+
+  public int getZoneId() {
+    return zoneId;
   }
 
   public int getSpawnId() {

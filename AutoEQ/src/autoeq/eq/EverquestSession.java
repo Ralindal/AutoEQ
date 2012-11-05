@@ -56,7 +56,7 @@ public class EverquestSession {
   private final List<Module> modules = new ArrayList<>();
   private final String sessionName;
   private final Map<Integer, SpellData> rawSpellData;
-  private final Ini2 globalIni;
+  private final File globalIniFile;
 
   private final Map<Integer, Spawn> spawns = new HashMap<>();
   private final Map<Integer, Spell> spells = new HashMap<>();
@@ -65,8 +65,10 @@ public class EverquestSession {
   private final Set<ProfileSet> profileSets = new LinkedHashSet<>();
   private final Set<String> ignoreList = new HashSet<>();
 
+  private Ini2 globalIni;
   private Ini2 ini;
   private File iniFile;
+  private long globalIniLastModified;
   private long iniLastModified;
   private long castLockEndMillis = Long.MIN_VALUE;
 
@@ -80,9 +82,11 @@ public class EverquestSession {
   private Module activeModule;
   private boolean debug = false;
 
-  public EverquestSession(Map<Integer, SpellData> rawSpellData, Ini2 globalIni, String host, int port, String username, String password) throws UnknownHostException, IOException, InterruptedException {
+  public EverquestSession(Map<Integer, SpellData> rawSpellData, File globalIniFile, String host, int port, String username, String password) throws UnknownHostException, IOException, InterruptedException {
     this.rawSpellData = rawSpellData;
-    this.globalIni = globalIni;
+    this.globalIniFile = globalIniFile;
+
+    reloadGlobalIni();
 
     @SuppressWarnings("resource")
     Socket socket = new Socket(host, port);
@@ -151,6 +155,9 @@ public class EverquestSession {
     getMoveLock().unlock(activeModule);
   }
 
+  public Set<String> getGroupMemberNames() {
+    return new HashSet<>(groupMemberNames);
+  }
 
   /**
    * @return a set of spawns with all group members in this zone
@@ -319,6 +326,9 @@ public class EverquestSession {
           if(iniFile.exists() && iniLastModified != iniFile.lastModified()) {
             reloadIni();
             reloadModules();
+          }
+          if(globalIniFile.exists() && globalIniLastModified != globalIniFile.lastModified()) {
+            reloadGlobalIni();
           }
         }
 
@@ -646,7 +656,13 @@ public class EverquestSession {
         }
       }
 
-      botUpdateHandler.handle(new BotUpdateEvent(me.getName(), me.getId(), spellDurations, me.getHitPointsPct(), me.getManaPct(), me.getEndurancePct(), me.getTarget() == null ? 0 : me.getTarget().getId()));
+      botUpdateHandler.handle(new BotUpdateEvent(me.getName(), getZoneId(), me.getId(), spellDurations, me.getHitPointsPct(), me.getManaPct(), me.getEndurancePct(), me.getTarget() == null ? 0 : me.getTarget().getId()));
+
+      Spawn pet = me.getPet();
+
+      if(pet != null) {
+        botUpdateHandler.handle(new BotUpdateEvent(pet.getName(), getZoneId(), pet.getId(), null, pet.getHitPointsPct(), pet.getManaPct(), pet.getEndurancePct(), pet.getTarget() == null ? 0 : pet.getTarget().getId()));
+      }
     }
 
     return fullUpdate;
@@ -866,6 +882,49 @@ public class EverquestSession {
 
   public Event<EverquestSession>.Interface onZoned() {
     return onZoned.getInterface();
+  }
+
+  private final Map<Integer, String> unmezzables = new HashMap<>();
+  private final Map<Integer, String> falseNameds = new HashMap<>();
+
+  public String getUnmezzables() {
+    String unmezzables = this.unmezzables.get(getZoneId());
+
+    return unmezzables == null ? "" : unmezzables;
+  }
+
+  public String getFalseNameds() {
+    String falseNameds = this.falseNameds.get(getZoneId());
+
+    return falseNameds == null ? "" : falseNameds;
+  }
+
+  private void reloadGlobalIni() {
+    log("SESSION: Reloading " + globalIniFile);
+
+    try {
+      globalIni = new Ini2(globalIniFile);
+      globalIniLastModified = globalIniFile.lastModified();
+
+      for(Section section : globalIni) {
+        if(section.getName().startsWith("Zone-")) {
+          int zoneId = Integer.parseInt(section.get("ID"));
+
+          String unmezzables = section.get("Unmezzables");
+          String falseNameds = section.get("FalseNameds");
+
+          if(unmezzables != null) {
+            this.unmezzables.put(zoneId, unmezzables);
+          }
+          if(falseNameds != null) {
+            this.falseNameds.put(zoneId, falseNameds);
+          }
+        }
+      }
+    }
+    catch(IOException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   private void reloadIni() {
