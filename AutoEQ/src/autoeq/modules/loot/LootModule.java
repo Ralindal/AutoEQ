@@ -34,6 +34,7 @@ public class LootModule implements Module {
 
   private long lootDelayUntil;
   private String lootPattern;
+  private String alsoLootPattern;
   private boolean lootCorpses;
   private int lootDelay;
 
@@ -44,27 +45,38 @@ public class LootModule implements Module {
 
     // Section section = session.getIni().getSection("Loot");
 
-    session.addUserCommand("loot", Pattern.compile("(on|off|only (.+)|delay ([0-9]+)|status)"), "(on|off|only <pattern>|delay <seconds>|status)", new UserCommand() {
+    session.addUserCommand("loot", Pattern.compile("(on|off|also (.+)|only (.+)|delay ([0-9]+)|status)"), "(on|off|also <pattern>|only <pattern>|delay <seconds>|status)", new UserCommand() {
       @Override
       public void onCommand(Matcher matcher) {
         if(matcher.group(1).equals("on")) {
           lootCorpses = true;
           lootPattern = null;
+          alsoLootPattern = null;
         }
         else if(matcher.group(1).equals("off")) {
           lootCorpses = false;
           lootPattern = null;
+          alsoLootPattern = null;
+        }
+        else if(matcher.group(1).startsWith("also ")) {
+          lootCorpses = true;
+          lootPattern = null;
+          alsoLootPattern = matcher.group(2);
         }
         else if(matcher.group(1).startsWith("only ")) {
           lootCorpses = true;
-          lootPattern = matcher.group(2);
+          lootPattern = matcher.group(3);
+          alsoLootPattern = null;
         }
         else if(matcher.group(1).startsWith("delay ")) {
-          lootDelay = Integer.parseInt(matcher.group(3));
+          lootDelay = Integer.parseInt(matcher.group(4));
         }
 
         if(lootPattern != null) {
           session.doCommand("/echo ==> Loot is on, only looting " + lootPattern + "; delay is " + lootDelay + " seconds.");
+        }
+        else if(alsoLootPattern != null) {
+          session.doCommand("/echo ==> Loot is on, also looting " + alsoLootPattern + "; delay is " + lootDelay + " seconds.");
         }
         else {
           session.doCommand("/echo ==> Loot is " + (lootCorpses ? "on" : "off") + "; delay is " + lootDelay + " seconds.");
@@ -114,143 +126,146 @@ public class LootModule implements Module {
                 session.doCommand("/loot");
 
                 if(session.delay(6000, "${Corpse.Open}")) {
-                  session.delay(1500);  // fixed delay here to allow for items to be populated
+                  try {
+                    session.delay(1500);  // fixed delay here to allow for items to be populated
 
-                  String itemCountStr = session.translate("${Corpse.Items}");
+                    String itemCountStr = session.translate("${Corpse.Items}");
 
-                  if(!itemCountStr.equals("NULL")) {
-                    int itemCount = Integer.parseInt(itemCountStr);
+                    if(!itemCountStr.equals("NULL")) {
+                      int itemCount = Integer.parseInt(itemCountStr);
 
-                    for(int i = 0; i < itemCount; i++) {
-                      final int itemNo = i + 1;
+                      for(int i = 0; i < itemCount; i++) {
+                        final int itemNo = i + 1;
 
-                      String itemName = session.translate("${Corpse.Item[" + itemNo + "].Name}");
-                      String itemId = session.translate("${Corpse.Item[" + itemNo + "].ID}");
-                      boolean noDrop = session.translate("${Corpse.Item[" + itemNo + "].NoDrop}").equals("TRUE");
+                        String itemName = session.translate("${Corpse.Item[" + itemNo + "].Name}");
+                        String itemId = session.translate("${Corpse.Item[" + itemNo + "].ID}");
+                        boolean noDrop = session.translate("${Corpse.Item[" + itemNo + "].NoDrop}").equals("TRUE");
 
-                      if(lootPattern == null || itemName.matches("(?i)" + lootPattern)) {
-                        LootType lootType = lootPattern != null ? LootType.KEEP : lootManager.getLootType(itemName);
+                        if(lootPattern == null || itemName.matches("(?i)" + lootPattern)) {
+                          LootType lootType = lootPattern != null || itemName.matches("(?i)" + alsoLootPattern) ? LootType.KEEP : lootManager.getLootType(itemName);
 
-                        if(lootType == null) {
-                          lootType = noDrop ? LootType.IGNORE : LootType.KEEP;
-                          lootManager.addLoot(itemName, lootType);
-                          session.echo("LOOT: Adding new loot: " + itemName);
-                        }
-
-                        // The Logic for looting items when inventory is full:
-
-                        // /if (
-                        //       (
-                        //         ${Corpse.Item[${i}].Lore} &&
-                        //         !${FindItem[${Corpse.Item[${i}]}].ID} ||
-                        //         !${Corpse.Item[${i}].Lore}
-                        //       ) &&
-                        //       (
-                        //         ${Me.FreeInventory} ||
-                        //         (
-                        //           ${FindItemCount[=${Corpse.Item[${i}].Name}]} &&
-                        //           ${Corpse.Item[${i}].Stackable} &&
-                        //           ${Corpse.Item[${i}].FreeStack}
-                        //         )
-                        //       ) &&
-                        //       (
-                        //         ${Ini[Loot.ini,"${Corpse.Item[${i}].Name.Left[1]}","${CurrentItem}"].Equal[Keep]} ||
-                        //         ${Ini[Loot.ini,"${Corpse.Item[${i}].Name.Left[1]}","${CurrentItem}"].Equal[Sell]}
-                        //       )
-                        //     ) /call LootItem ${i} Keep right
-
-                        if(lootType == LootType.DESTROY) {
-
-                          // When destroying items, check if we can pick them up first:
-
-                          boolean canLoot = session.evaluate(
-                            "(!${FindItem[${Corpse.Item[" + itemNo + "]}].ID} && !${FindItemBank[${Corpse.Item[" + itemNo + "]}].ID}) || !${Corpse.Item[" + itemNo + "].Lore}"
-                          );
-
-                          if(!canLoot) {
-                            continue;
+                          if(lootType == null) {
+                            lootType = noDrop ? LootType.IGNORE : LootType.KEEP;
+                            lootManager.addLoot(itemName, lootType);
+                            session.echo("LOOT: Adding new loot: " + itemName);
                           }
-                        }
 
-                        if(lootType == LootType.KEEP) {
-                          String result = session.translate(
-                            "${Corpse.Item[" + itemNo + "].Tradeskills} ${Corpse.Item[" + itemNo + "].Size}," +
-                            "${InvSlot[23].Item.Type};${InvSlot[23].Item.Container};${InvSlot[23].Item.Items};${InvSlot[23].Item.SizeCapacity} " +
-                            "${InvSlot[24].Item.Type};${InvSlot[24].Item.Container};${InvSlot[24].Item.Items};${InvSlot[24].Item.SizeCapacity} " +
-                            "${InvSlot[25].Item.Type};${InvSlot[25].Item.Container};${InvSlot[25].Item.Items};${InvSlot[25].Item.SizeCapacity} " +
-                            "${InvSlot[26].Item.Type};${InvSlot[26].Item.Container};${InvSlot[26].Item.Items};${InvSlot[26].Item.SizeCapacity} " +
-                            "${InvSlot[27].Item.Type};${InvSlot[27].Item.Container};${InvSlot[27].Item.Items};${InvSlot[27].Item.SizeCapacity} " +
-                            "${InvSlot[28].Item.Type};${InvSlot[28].Item.Container};${InvSlot[28].Item.Items};${InvSlot[28].Item.SizeCapacity} " +
-                            "${InvSlot[29].Item.Type};${InvSlot[29].Item.Container};${InvSlot[29].Item.Items};${InvSlot[29].Item.SizeCapacity} " +
-                            "${InvSlot[30].Item.Type};${InvSlot[30].Item.Container};${InvSlot[30].Item.Items};${InvSlot[30].Item.SizeCapacity} " +
-                            "${InvSlot[31].Item.Type};${InvSlot[31].Item.Container};${InvSlot[31].Item.Items};${InvSlot[31].Item.SizeCapacity} " +
-                            "${InvSlot[32].Item.Type};${InvSlot[32].Item.Container};${InvSlot[32].Item.Items};${InvSlot[32].Item.SizeCapacity}"
-                          );
+                          // The Logic for looting items when inventory is full:
 
-                          int availableSlots = 0;
-                          String[] results = result.split(",");
-                          String[] itemData = results[0].split(" ");
+                          // /if (
+                          //       (
+                          //         ${Corpse.Item[${i}].Lore} &&
+                          //         !${FindItem[${Corpse.Item[${i}]}].ID} ||
+                          //         !${Corpse.Item[${i}].Lore}
+                          //       ) &&
+                          //       (
+                          //         ${Me.FreeInventory} ||
+                          //         (
+                          //           ${FindItemCount[=${Corpse.Item[${i}].Name}]} &&
+                          //           ${Corpse.Item[${i}].Stackable} &&
+                          //           ${Corpse.Item[${i}].FreeStack}
+                          //         )
+                          //       ) &&
+                          //       (
+                          //         ${Ini[Loot.ini,"${Corpse.Item[${i}].Name.Left[1]}","${CurrentItem}"].Equal[Keep]} ||
+                          //         ${Ini[Loot.ini,"${Corpse.Item[${i}].Name.Left[1]}","${CurrentItem}"].Equal[Sell]}
+                          //       )
+                          //     ) /call LootItem ${i} Keep right
 
-                          for(String bag : results[1].split(" ")) {
-                            String[] info = bag.split(";");
+                          if(lootType == LootType.DESTROY) {
 
-                            if(!info[1].equals("NULL") && !info[2].equals("NULL")) {
-                              if(itemData[0].equals("TRUE") || !"*UnknownCombine58".equals(info[0])) {  // if tradeskill item or not a tradeskill specific bag:
-                                if(itemData[1].compareTo(info[3]) <= 0) {  // if size fits
-                                  availableSlots += Integer.parseInt(info[1]) - Integer.parseInt(info[2]);
+                            // When destroying items, check if we can pick them up first:
+
+                            boolean canLoot = session.evaluate(
+                              "(!${FindItem[${Corpse.Item[" + itemNo + "]}].ID} && !${FindItemBank[${Corpse.Item[" + itemNo + "]}].ID}) || !${Corpse.Item[" + itemNo + "].Lore}"
+                            );
+
+                            if(!canLoot) {
+                              continue;
+                            }
+                          }
+
+                          if(lootType == LootType.KEEP) {
+                            String result = session.translate(
+                              "${Corpse.Item[" + itemNo + "].Tradeskills} ${Corpse.Item[" + itemNo + "].Size}," +
+                              "${InvSlot[23].Item.Type};${InvSlot[23].Item.Container};${InvSlot[23].Item.Items};${InvSlot[23].Item.SizeCapacity}:" +
+                              "${InvSlot[24].Item.Type};${InvSlot[24].Item.Container};${InvSlot[24].Item.Items};${InvSlot[24].Item.SizeCapacity}:" +
+                              "${InvSlot[25].Item.Type};${InvSlot[25].Item.Container};${InvSlot[25].Item.Items};${InvSlot[25].Item.SizeCapacity}:" +
+                              "${InvSlot[26].Item.Type};${InvSlot[26].Item.Container};${InvSlot[26].Item.Items};${InvSlot[26].Item.SizeCapacity}:" +
+                              "${InvSlot[27].Item.Type};${InvSlot[27].Item.Container};${InvSlot[27].Item.Items};${InvSlot[27].Item.SizeCapacity}:" +
+                              "${InvSlot[28].Item.Type};${InvSlot[28].Item.Container};${InvSlot[28].Item.Items};${InvSlot[28].Item.SizeCapacity}:" +
+                              "${InvSlot[29].Item.Type};${InvSlot[29].Item.Container};${InvSlot[29].Item.Items};${InvSlot[29].Item.SizeCapacity}:" +
+                              "${InvSlot[30].Item.Type};${InvSlot[30].Item.Container};${InvSlot[30].Item.Items};${InvSlot[30].Item.SizeCapacity}:" +
+                              "${InvSlot[31].Item.Type};${InvSlot[31].Item.Container};${InvSlot[31].Item.Items};${InvSlot[31].Item.SizeCapacity}:" +
+                              "${InvSlot[32].Item.Type};${InvSlot[32].Item.Container};${InvSlot[32].Item.Items};${InvSlot[32].Item.SizeCapacity}"
+                            );
+
+                            int availableSlots = 0;
+                            String[] results = result.split(",");
+                            String[] itemData = results[0].split(" ");
+
+                            for(String bag : results[1].split(":")) {
+                              String[] info = bag.split(";");
+
+                              if(!info[1].equals("NULL") && !info[2].equals("NULL")) {
+                                if(itemData[0].equals("TRUE") || !"*UnknownCombine58".equals(info[0])) {  // if tradeskill item or not a tradeskill specific bag:
+                                  if(itemData[1].compareTo(info[3]) <= 0) {  // if size fits
+                                    availableSlots += Integer.parseInt(info[1]) - Integer.parseInt(info[2]);
+                                  }
                                 }
                               }
                             }
-                          }
 
-                          // AvailableSlots now contains total slots this item would fit in.
-                          session.echo("LOOT: Availabe slots for ${Corpse.Item[" + itemNo + "]}: " + availableSlots);
+                            // AvailableSlots now contains total slots this item would fit in.
+                            session.echo("LOOT: Availabe slots for ${Corpse.Item[" + itemNo + "]}: " + availableSlots);
 
-                          // When keeping items, we must make sure there's space.  Special rules are followed
-                          // for stackable and lore items.
-                          boolean canLoot = session.evaluate(
-                            "((!${FindItem[${Corpse.Item[" + itemNo + "]}].ID} && !${FindItemBank[${Corpse.Item[" + itemNo + "]}].ID}) || !${Corpse.Item[" + itemNo + "].Lore}) && " +
-                            "(" + availableSlots + " || (${FindItemCount[=${Corpse.Item[" + itemNo + "].Name}]} && ${Corpse.Item[" + itemNo + "].Stackable} && ${Corpse.Item[" + itemNo + "].FreeStack}))"
-                          );
+                            // When keeping items, we must make sure there's space.  Special rules are followed
+                            // for stackable and lore items.
+                            boolean canLoot = session.evaluate(
+                              "((!${FindItem[${Corpse.Item[" + itemNo + "]}].ID} && !${FindItemBank[${Corpse.Item[" + itemNo + "]}].ID}) || !${Corpse.Item[" + itemNo + "].Lore}) && " +
+                              "(" + availableSlots + " || (${FindItemCount[=${Corpse.Item[" + itemNo + "].Name}]} && ${Corpse.Item[" + itemNo + "].Stackable} && ${Corpse.Item[" + itemNo + "].FreeStack}))"
+                            );
 
-                          if(!canLoot) {
-                            session.echo("LOOT: Left ${Corpse.Item[" + itemNo + "]} on corpse, no more space");
-                            continue;
-                          }
-                        }
-
-                        if(lootType == LootType.KEEP || lootType == LootType.DESTROY) {
-                          session.doCommand("/nomodkey /shift /itemnotify Loot" + itemNo + " " + (lootType == LootType.KEEP ? "rightmouseup" : "leftmouseup"));
-
-                          // Confirm no drop box if required
-                          if(noDrop) {
-                            if(session.delay(2500, "${Window[ConfirmationDialogBox].Open}")) {
-                              session.doCommand("/nomodkey /notify ConfirmationDialogBox Yes_Button leftmouseup");
+                            if(!canLoot) {
+                              session.echo("LOOT: Left ${Corpse.Item[" + itemNo + "]} on corpse, no more space");
+                              continue;
                             }
                           }
 
-                          // Wait until item looted
-                          session.delay(2500, "!${Corpse.Item[" + itemNo + "].ID}");
+                          if(lootType == LootType.KEEP || lootType == LootType.DESTROY) {
+                            session.doCommand("/nomodkey /shift /itemnotify Loot" + itemNo + " " + (lootType == LootType.KEEP ? "rightmouseup" : "leftmouseup"));
 
-                          // Destroy item on cursor if needed
-                          if(lootType == LootType.DESTROY) {
-                            if(session.delay(2500, "${Cursor.ID} == " + itemId)) {
-                              session.doCommand("/destroy");
+                            // Confirm no drop box if required
+                            if(noDrop) {
+                              if(session.delay(2500, "${Window[ConfirmationDialogBox].Open}")) {
+                                session.doCommand("/nomodkey /notify ConfirmationDialogBox Yes_Button leftmouseup");
+                              }
+                            }
+
+                            // Wait until item looted
+                            session.delay(2500, "!${Corpse.Item[" + itemNo + "].ID}");
+
+                            // Destroy item on cursor if needed
+                            if(lootType == LootType.DESTROY) {
+                              if(session.delay(2500, "${Cursor.ID} == " + itemId)) {
+                                session.doCommand("/destroy");
+                              }
                             }
                           }
-                        }
-                        else {
-                          session.echo("LOOT: Left on corpse: " + itemName);
+                          else {
+                            session.echo("LOOT: Left on corpse: " + itemName);
+                          }
                         }
                       }
+
+                      looted.add(spawn);
                     }
-
-                    looted.add(spawn);
                   }
-
-                  do {
-                    session.doCommand("/nomodkey /notify LootWnd LW_DoneButton leftmouseup");
-                  } while(!session.delay(500, "!${Corpse.Open}"));
+                  finally {
+                    do {
+                      session.doCommand("/nomodkey /notify LootWnd LW_DoneButton leftmouseup");
+                    } while(!session.delay(500, "!${Corpse.Open}"));
+                  }
 
                   session.delay(500);
                 }
@@ -286,17 +301,4 @@ public class LootModule implements Module {
   public boolean isLowLatency() {
     return false;
   }
-
-
-//  private static class LootedSpawn {
-//    private final Spawn spawn;
-//    private final long millis;
-//
-//    public LootedSpawn(Spawn spawn) {
-//      this.spawn = spawn;
-//      this.millis = System.currentTimeMillis();
-//    }
-//
-//
-//  }
 }
