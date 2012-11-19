@@ -96,8 +96,8 @@ public class TargetModule implements Module {
   private boolean isValidTarget(Spawn spawn) {
     if(spawn.isEnemy()) {
       if(TargetPattern.isValidTarget(validTargets, spawn)) {
-        if(ExpressionEvaluator.evaluate(conditions, new ExpressionRoot(session, spawn, null, null), this)) {
-          if(!targetSelection.equals("assist") || ExpressionEvaluator.evaluate(assistConditions, new ExpressionRoot(session, spawn, null, null), this)) {
+        if(ExpressionEvaluator.evaluate(conditions, new ExpressionRoot(session, spawn, null, null, null), this)) {
+          if(!targetSelection.equals("assist") || ExpressionEvaluator.evaluate(assistConditions, new ExpressionRoot(session, spawn, null, null, null), this)) {
             return true;
           }
         }

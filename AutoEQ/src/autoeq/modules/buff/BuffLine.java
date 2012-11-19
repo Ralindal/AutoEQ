@@ -1,25 +1,23 @@
 package autoeq.modules.buff;
 
-import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
 import autoeq.ExpressionEvaluator;
 import autoeq.TargetPattern;
-import autoeq.effects.Effect;
 import autoeq.eq.EverquestSession;
 import autoeq.eq.ExpressionRoot;
 import autoeq.eq.Priority;
 import autoeq.eq.Spawn;
+import autoeq.eq.SpellParser;
 import autoeq.eq.TargetType;
 import autoeq.ini.Section;
-
 
 public class BuffLine implements Iterable<EffectSet> {
   private final String validTargets;
   private final String profiles;
   private final List<String> conditions;
-  private final List<EffectSet> effectSets = new ArrayList<>();
+  private final List<EffectSet> effectSets;
   private final String name;
   private final int gem;
   private final int priority;
@@ -33,30 +31,7 @@ public class BuffLine implements Iterable<EffectSet> {
     this.name = section.getName();
     this.conditions = section.getAll("Condition");
     this.priority = Priority.decodePriority(section.get("Priority"), 300);
-
-    List<String> spellNamePairs = section.getAll("Spell");
-
-    for(String s : spellNamePairs) {
-      Effect groupEffect = null;
-      Effect singleEffect = null;
-
-      for(String name : s.split("\\|")) {
-        Effect effect = session.getEffect(name, 10);
-
-        if(effect != null) {
-          if(effect.getSpell().getTargetType() == TargetType.SINGLE) {
-            singleEffect = effect;
-          }
-          else {
-            groupEffect = effect;
-          }
-        }
-      }
-
-      if(singleEffect != null || groupEffect != null) {
-        effectSets.add(new EffectSet(singleEffect, groupEffect));
-      }
-    }
+    this.effectSets = SpellParser.parseSpells(session, section, 10);
   }
 
   public boolean hasEffects() {
@@ -90,7 +65,7 @@ public class BuffLine implements Iterable<EffectSet> {
     valid = valid && ((targetType == TargetType.CORPSE) == !target.isAlive());
 
     if(valid) {
-      valid = ExpressionEvaluator.evaluate(conditions, new ExpressionRoot(target.getSession(), target, null, null), this);
+      valid = ExpressionEvaluator.evaluate(conditions, new ExpressionRoot(target.getSession(), target, null, null, null), this);
     }
 
     return valid;

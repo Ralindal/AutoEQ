@@ -439,7 +439,7 @@ public class PullModule implements Module {
     for(Spawn spawn : session.getSpawns()) {
       if(spawn.getDistance(node.x, node.y) < node.size) {
         if((node.z == null && Math.abs(spawn.getZ() - me.getZ()) < zrange) || (node.z != null && Math.abs(spawn.getZ() - node.z) < 10)) {
-          if(isValidTarget(spawn)) {
+          if(isValidTarget(spawn) && !session.getIgnoreList().contains(spawn.getName())) {
             spawns.add(spawn);
           }
         }
@@ -452,7 +452,7 @@ public class PullModule implements Module {
   private boolean isValidTarget(Spawn spawn) {
     if(spawn.getType() == SpawnType.NPC) {
       if(TargetPattern.isValidTarget(validTargets, spawn)) {
-        if(ExpressionEvaluator.evaluate(conditions, new ExpressionRoot(session, spawn, null, null), this)) {
+        if(ExpressionEvaluator.evaluate(conditions, new ExpressionRoot(session, spawn, null, null, null), this)) {
           return true;
         }
       }

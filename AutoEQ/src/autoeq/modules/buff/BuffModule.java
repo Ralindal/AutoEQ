@@ -41,7 +41,11 @@ public class BuffModule implements Module {
 
     for(Section section : session.getIni()) {
       if(section.getName().startsWith("Buff.")) {
-        buffLines.add(new BuffLine(session, section));
+        BuffLine buffLine = new BuffLine(session, section);
+
+        if(buffLine.hasEffects()) {
+          buffLines.add(buffLine);
+        }
       }
     }
   }
@@ -134,11 +138,11 @@ public class BuffModule implements Module {
       if(session.isProfileActive(buffLine.getProfile()) && buffLine.isEnabled()) {
         Map<EffectSet, List<Spawn>> m = new HashMap<>();
 
-
         for(Spawn potentialTarget : potentialTargets) {
 
 //          System.out.println("PotBuffTarget : " + potentialTarget + " " + potentialTarget.getType());
           if(buffLine.isValidTarget(potentialTarget) && potentialTarget.getDistance() < 1000) {
+
             spellSetLoop:
             for(EffectSet effectSet : buffLine) {  // SpellSets are spell of the same "buff level", not necessarily same spell level.  Usually group + single target.
               for(Effect effect : effectSet.getEffects()) {  // All spells are from book
@@ -147,10 +151,9 @@ public class BuffModule implements Module {
                 if(((effect.getType() != Type.SPELL && effect.getType() != Type.SONG) || (spell.isWithinLevelRestrictions(potentialTarget) && spell.getLevel() <= session.getMe().getLevel()))) {  // Level check here in case of delevelling (but spell is still in book)
 //                  System.out.println(potentialTarget + " is a valid target for " + spell);
 
-
                   if(effect.getType() == Type.SONG) {
                     SpellEffectManager manager = session.getMe().getSpellEffectManager(spell);
-                    long millisLeft = manager.getDuration();
+                    long millisLeft = manager.getMillisLeft();
 
                     if(millisLeft <= 6000) { // One Tick
                       long currentTime = System.currentTimeMillis();
@@ -167,10 +170,11 @@ public class BuffModule implements Module {
                     }
                   }
                   else {
-                    if(potentialTarget.willStack(spell) && potentialTarget.getSpellEffectManager(spell).getDuration() == 0) {
-//                    System.err.println(potentialTarget + " is a valid target for " + spell);
+                    if(potentialTarget.willStack(spell) && potentialTarget.getSpellEffectManager(spell).getMillisLeft() == 0) {
+//                     System.err.println(potentialTarget + " is a valid target for " + spell);
 
-                      if(spell.getTargetType() == TargetType.SINGLE) {
+                      if(spell.getTargetType() == TargetType.SINGLE || spell.getTargetType() == TargetType.CORPSE) {
+//                      System.err.println(potentialTarget + " is a valid target for " + spell);
                         buffs.add(new Buff(effect, buffLine, buffLine.getPriority(), potentialTarget));
                       }
                       else {

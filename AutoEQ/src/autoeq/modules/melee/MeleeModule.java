@@ -125,7 +125,7 @@ public class MeleeModule implements Module {
           }
         }
         else {
-          if(!meleeStatus.contains("ENGAGED") || (!meleeStatus.contains("MELEE") && "WAR SHD PAL RNG BRD BST MNK BER".contains(me.getClassShortName()))) {
+          if(!meleeStatus.contains("ENGAGED") || (!meleeStatus.contains("MELEE") && "WAR SHD PAL RNG BRD BST MNK BER CLR".contains(me.getClassShortName()))) {
             session.doCommand("/stand");
             session.doCommand("/target id " + mainTarget.getId());
 
@@ -164,7 +164,7 @@ public class MeleeModule implements Module {
   private boolean isValidTarget(Spawn spawn) {
     if(spawn.isEnemy()) {
       if(TargetPattern.isValidTarget(validTargets, spawn)) {
-        if(ExpressionEvaluator.evaluate(conditions, new ExpressionRoot(session, spawn, null, null), this)) {
+        if(ExpressionEvaluator.evaluate(conditions, new ExpressionRoot(session, spawn, null, null, null), this)) {
           return true;
         }
       }

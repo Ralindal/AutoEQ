@@ -1,9 +1,10 @@
 package autoeq.modules.debuff;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-
+import java.util.Set;
 
 import autoeq.ExpressionEvaluator;
 import autoeq.TargetPattern;
@@ -21,8 +22,10 @@ import autoeq.eq.Priority;
 import autoeq.eq.Spawn;
 import autoeq.eq.SpawnType;
 import autoeq.eq.SpellLine;
+import autoeq.eq.SpellParser;
 import autoeq.eq.TargetType;
 import autoeq.ini.Section;
+import autoeq.modules.buff.EffectSet;
 import autoeq.modules.target.TargetModule;
 
 import com.google.inject.Inject;
@@ -32,38 +35,15 @@ public class DebuffModule implements Module {
   private final EverquestSession session;
   private final List<DebuffLine> debuffLines = new ArrayList<>();
   private final TargetModule targetModule;
+  private final Set<String> activeProfiles = new HashSet<>();
 
   private Spawn mainTarget;
+  private Spawn mainAssist;
 
   @Inject
   public DebuffModule(EverquestSession session, TargetModule targetModule) {
     this.session = session;
     this.targetModule = targetModule;
-    for(Section section : session.getIni()) {
-      if(section.getName().startsWith("Debuff.")) {
-        List<Effect> effects = new ArrayList<>();
-        int agro = Integer.parseInt(section.getDefault("Agro", "100"));
-
-        for(String effectDescription : section.getAll("Spell")) {
-          Effect effect = session.getEffect(effectDescription, agro);
-
-          if(effect != null) {
-            effects.add(effect);
-          }
-        }
-
-        for(int i = 0; i < Integer.parseInt(section.getDefault("Skip", "0")); i++) {
-          if(effects.size() > 0) {
-            effects.remove(0);
-          }
-        }
-
-        if(effects.size() > 0) {
-          int gem = section.get("Gem") != null ? Integer.parseInt(section.get("Gem")) : 0;
-          debuffLines.add(new DebuffLine(gem, effects, section.get("ValidTargets"), section.get("Profile"), Priority.decodePriority(section.get("Priority"), 200), section.get("TargetType").equals("main"), section.getAll("Condition")));
-        }
-      }
-    }
   }
 
   @Override
@@ -72,6 +52,24 @@ public class DebuffModule implements Module {
     Me me = session.getMe();
 
     if(!me.isMoving() && me.getType() == SpawnType.PC) {
+
+      if(!session.getActiveProfiles().equals(activeProfiles)) {
+        activeProfiles.clear();
+        activeProfiles.addAll(session.getActiveProfiles());
+        debuffLines.clear();
+
+        for(Section section : session.getIni()) {
+          if(section.getName().startsWith("Debuff.")) {
+            List<EffectSet> effectSets = SpellParser.parseSpells(session, section, 100);
+
+            if(effectSets.size() > 0) {
+              Effect effect = effectSets.get(0).getSingleOrGroup();
+              int gem = section.get("Gem") != null ? Integer.parseInt(section.get("Gem")) : 0;
+              debuffLines.add(new DebuffLine(gem, effect, section.get("ValidTargets"), section.get("Profile"), Priority.decodePriority(section.get("Priority"), 200), section.get("TargetType").equals("main"), section.getAll("Condition")));
+            }
+          }
+        }
+      }
 
       // 0. Mem debuff spells
       // 1. Keep a list of nearby mobs
@@ -83,7 +81,7 @@ public class DebuffModule implements Module {
        */
 
       for(DebuffLine debuffLine : debuffLines) {
-        if(session.isProfileActive(debuffLine.getProfile())) {
+        if(session.isProfileActive(debuffLine.getProfile()) && !me.inCombat()) {
           Effect effect = debuffLine.getEffect();
 
           if(effect.getType() == Effect.Type.SPELL || effect.getType() == Type.SONG) {
@@ -111,7 +109,6 @@ public class DebuffModule implements Module {
       LinkedHashMap<DebuffLine, List<Spawn>> targetLists = new LinkedHashMap<>();
       boolean assisted = false;
 
-//      debuffLines:
       for(DebuffLine debuffLine : debuffLines) {
         if(session.isProfileActive(debuffLine.getProfile())) {
           Effect effect = debuffLine.getEffect();
@@ -119,6 +116,7 @@ public class DebuffModule implements Module {
           if(effect.isReady()) {
 
             if(!assisted) {
+              mainAssist = targetModule.getMainAssist();
               mainTarget = targetModule.getFromAssist();
               assisted = true;
             }
@@ -131,7 +129,7 @@ public class DebuffModule implements Module {
     //              }
 
                   if(!spawn.getSpellEffects().contains(effect.getSpell()) && !effect.getSpell().isEquivalent(spawn.getSpellEffects())) {
-                    if(debuffLine.isValidTarget(spawn, mainTarget, effect)) {
+                    if(debuffLine.isValidTarget(spawn, mainTarget, mainAssist, effect)) {
                       if(spawn == mainTarget) {
                         session.echo(mainTarget + "; MyAgro = " + mainTarget.getMyAgro() + "; TankAgro = " + mainTarget.getTankAgro());
                       }
@@ -179,7 +177,7 @@ public class DebuffModule implements Module {
 
   private static class DebuffLine implements SpellLine {
     private final int gem;
-    private final List<Effect> effects;
+    private final Effect effect;
     private final List<String> conditions;
     private final String profiles;
     private final String validTargets;
@@ -188,9 +186,9 @@ public class DebuffModule implements Module {
 
     private boolean enabled = true;
 
-    public DebuffLine(int gem, List<Effect> effects, String validTargets, String profiles, int priority, boolean mainOnly, List<String> conditions) {
+    public DebuffLine(int gem, Effect effect, String validTargets, String profiles, int priority, boolean mainOnly, List<String> conditions) {
       this.gem = gem;
-      this.effects = effects;
+      this.effect = effect;
       this.validTargets = validTargets;
       this.profiles = profiles;
       this.conditions = conditions;
@@ -212,13 +210,13 @@ public class DebuffModule implements Module {
      */
     @Override
     public Effect getEffect() {
-      return effects.get(0);
+      return effect;
     }
 
     /**
      * Checks if target is a valid target.
      */
-    public boolean isValidTarget(Spawn target, Spawn mainTarget, Effect effect) {
+    public boolean isValidTarget(Spawn target, Spawn mainTarget, Spawn mainAssist, Effect effect) {
       boolean valid = validTargets != null ? TargetPattern.isValidTarget(validTargets, target) : true;
 
       valid = valid && (!mainOnly || target.equals(mainTarget));
@@ -226,7 +224,7 @@ public class DebuffModule implements Module {
       valid = valid && effect.getSpell().isWithinLevelRestrictions(target);
 
       if(valid) {
-        valid = ExpressionEvaluator.evaluate(conditions, new ExpressionRoot(target.getSession(), target, mainTarget, effect), this);
+        valid = ExpressionEvaluator.evaluate(conditions, new ExpressionRoot(target.getSession(), target, mainTarget, mainAssist, effect), this);
       }
 
       return valid;

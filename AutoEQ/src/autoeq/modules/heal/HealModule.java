@@ -22,7 +22,9 @@ import autoeq.eq.Priority;
 import autoeq.eq.Spawn;
 import autoeq.eq.SpawnType;
 import autoeq.eq.SpellLine;
+import autoeq.eq.SpellParser;
 import autoeq.ini.Section;
+import autoeq.modules.buff.EffectSet;
 import autoeq.modules.target.TargetModule;
 
 import com.google.inject.Inject;
@@ -42,15 +44,9 @@ public class HealModule implements Module {
 
     for(Section section : session.getIni()) {
       if(section.getName().startsWith("Heal.")) {
-        Effect effect = null;
+        List<EffectSet> effectSets = SpellParser.parseSpells(session, section, 10);
 
-        for(String effectDescription : section.getAll("Spell")) {
-          effect = session.getEffect(effectDescription, 10);
-
-          if(effect != null) {
-            break;
-          }
-        }
+        Effect effect = effectSets.isEmpty() ? null : effectSets.get(0).getSingleOrGroup();
 
         if(effect != null) {
           System.out.println("adding spell " + effect);
@@ -145,10 +141,10 @@ public class HealModule implements Module {
         if(session.isProfileActive(heal.getProfile())) {
           for(Spawn target : targets) {
 
-//            System.out.println("Heal Target -> " + target);
             if(TargetPattern.isValidTarget(heal.validTargets, target)) {
-              if(ExpressionEvaluator.evaluate(heal.getConditions(), new ExpressionRoot(session, target, mainTarget, heal.getEffect()), this)) {
+              if(ExpressionEvaluator.evaluate(heal.getConditions(), new ExpressionRoot(session, target, mainTarget, mainAssist, heal.getEffect()), this)) {
                 if(heal.getEffect().getSpell().isWithinLevelRestrictions(target)) {
+                  //System.out.println("Heal Target -> " + target + " -- " + heal.getEffect() + " -- " + heal.getEffect().getSpell().getDuration());
                   if(target.willStack(heal.getEffect().getSpell())) {
                     if(target.getDistance() <= maxHealRange) {
                       if(ActivateEffectCommand.checkEffect(heal.getEffect(), target)) {
