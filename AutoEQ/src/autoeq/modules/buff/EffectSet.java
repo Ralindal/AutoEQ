@@ -14,11 +14,11 @@ public class EffectSet {
   public Effect getSingle() {
     return single;
   }
-  
+
   public Effect getGroup() {
     return group;
   }
-  
+
   public Effect[] getEffects() {
     if(single != null && group != null) {
       return new Effect[] {group, single};
@@ -29,5 +29,14 @@ public class EffectSet {
     else {
       return new Effect[] {group};
     }
+  }
+
+  public Effect getSingleOrGroup() {
+    return single != null ? single : group;
+  }
+
+  @Override
+  public String toString() {
+    return "EffectSet(S: " + single + " G: " + group + ")";
   }
 }
