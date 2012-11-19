@@ -46,9 +46,8 @@ public class Me extends Spawn {
   private int aaCount;
   private boolean invisible;
 
+  private long mobLastGateCastMillis;
   private long lastCastMillis;
-
-  private String castResult;
 
   public Me(EverquestSession session, int id) {
     super(session, id);
@@ -71,7 +70,7 @@ public class Me extends Spawn {
     }
 
     session.addChatListener(new ChatListener() {
-      private final Pattern PATTERN = Pattern.compile(".*");
+      private final Pattern PATTERN = Pattern.compile(".* begins to cast the gate spell\\.");
 
       @Override
       public Pattern getFilter() {
@@ -80,9 +79,7 @@ public class Me extends Spawn {
 
       @Override
       public void match(Matcher matcher) {
-        if("You can only cast this spell in the outdoors.".equals(matcher.group())) {
-          castResult = "CAST_OUTDOOR";
-        }
+        mobLastGateCastMillis = System.currentTimeMillis();
       }
     });
 
@@ -191,35 +188,6 @@ public class Me extends Spawn {
     }
 
     return false;
-  }
-
-  @SuppressWarnings("unused")
-  private String bardCast(SongEffect effect, Spawn target) {
-
-    if(effect.getSpell().isTargetted()) {
-      session.doCommand("/target id " + target.getId());
-      session.delay(1000, "${Target.ID} == " + target.getId());
-    }
-
-    castResult = "CAST_SUCCESS";
-
-    session.doCommand("/stopcast");
-    session.doCommand("/stand");
-
-    int gem = getGem(effect.getSpell());
-
-    session.doCommand("/cast " + gem);
-
-    session.delay(1000, "${Window[CastingWindow]}");
-    session.delay(30000, "!${Window[CastingWindow]}");
-
-    /*
-     * Casting completed now.  Wait a bit to see the cast result.
-     */
-
-    session.delay(100);
-
-    return castResult;
   }
 
   public String activeEffect(Effect effect, Spawn target) {
@@ -507,6 +475,10 @@ public class Me extends Spawn {
     return 100 * getRecentDpsTaken() / getMaxHitPoints();
   }
 
+  public boolean isAMobGating() {
+    return System.currentTimeMillis() - mobLastGateCastMillis < 5000;
+  }
+
   /**
    * @return true if the situation looks dangerous (ie, lots of mobs, named in camp)
    */
@@ -545,36 +517,6 @@ public class Me extends Spawn {
 
   public Set<String> getProfiles() {
     return session.getActiveProfiles();
-  }
-
-  public boolean hasHealOverTime() {
-    for(Spell spell : getSpellEffects()) {
-      if(spell.isHealOverTime()) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  public boolean hasGiftOfMana() {
-    for(String name : getBuffNames()) {
-      if(name.startsWith("Gift of ") && name.endsWith(" Mana")) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  public boolean hasHarvest() {
-    for(String name : getBuffNames()) {
-      if(name.startsWith("Patient Harvest") || name.startsWith("Tranquil Harvest") || name.startsWith("Serene Harvest")) {
-        return true;
-      }
-    }
-
-    return false;
   }
 
   public boolean isExtendedTarget(Spawn spawn) {
