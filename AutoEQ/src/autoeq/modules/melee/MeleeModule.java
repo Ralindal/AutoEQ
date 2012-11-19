@@ -106,7 +106,7 @@ public class MeleeModule implements Module {
         }
 
         if((mainTarget == null && (attacking || meleeStatus.contains("ENGAGED"))) || (mainTarget != null && (!mainTarget.isEnemy() || mainTarget.getDistance() > range))) {
-          session.echo("MELEE: Holding (was attacking = " + attacking + "; mainTarget = " + mainTarget + ")");
+          // session.echo("MELEE: Holding (was attacking = " + attacking + "; mainTarget = " + mainTarget + ")");
           mainTarget = null;
           session.doCommand("/melee reset");
 
@@ -130,7 +130,7 @@ public class MeleeModule implements Module {
             session.doCommand("/target id " + mainTarget.getId());
 
             if(session.delay(1000, "${Target.ID} == " + mainTarget.getId())) {
-              session.echo("MELEE: Attacking [ " + mainTarget.getName() + " ] -- status = " + me.getMeleeStatus());
+              // session.echo("MELEE: Attacking [ " + mainTarget.getName() + " ] -- status = " + me.getMeleeStatus());
               session.doCommand("/killthis");
 //              session.delay(1000);
 //              session.doCommand("/killthis");

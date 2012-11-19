@@ -212,7 +212,7 @@ public class PullModule implements Module {
               session.doCommand(String.format("/face nolook loc %.2f,%.2f", path.get(1).y, path.get(1).x));
             }
 
-            session.echo("PULL: Done");
+            // session.echo("PULL: Done");
           }
           finally {
             MoveUtils2.stop(session);
@@ -373,7 +373,7 @@ public class PullModule implements Module {
         }
 
         if(closestMatch != null) {
-          session.echo("PULL: Agroing " + closestMatch + " on the move, using " + pullMethod);
+//          session.echo("PULL: Agroing " + closestMatch + " on the move, using " + pullMethod);
           session.getMe().activeEffect(pullMethod, closestMatch);
         }
       }
