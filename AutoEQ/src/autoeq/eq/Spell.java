@@ -10,9 +10,8 @@ import java.util.regex.Pattern;
 
 import autoeq.SpellData;
 
-
-
 public class Spell {
+
   private final EverquestSession session;
   private final int id;
   private final int level;
@@ -73,12 +72,36 @@ public class Spell {
                           this.isCharm ? sd.getMax(sd.getAttributeIndex(SpellData.ATTRIB_CHARM)) :
                                          255;
 
-    isHealOverTime = sd.hasAttribute(SpellData.ATTRIB_HEAL_OVER_TIME);
+    isHealOverTime = sd.hasAttribute(SpellData.ATTRIB_HEAL_OVER_TIME) || (sd.hasAttribute(SpellData.ATTRIB_DAMAGE) && sd.getBase(sd.getAttributeIndex(SpellData.ATTRIB_DAMAGE)) > 100 && duration <= 120);
     isSlow = sd.hasAttribute(SpellData.ATTRIB_SLOW);
+  }
+
+  public EffectType getEffectType() {
+    if(isMez) {
+      return EffectType.MEZ;
+    }
+    if(isCharm) {
+      return EffectType.CHARM;
+    }
+    if(isHealOverTime) {
+      return EffectType.HEAL_OVER_TIME;
+    }
+    if(isSlow) {
+      return EffectType.SLOW;
+    }
+    if(getDamageOverTime() > 0) {
+      return EffectType.DAMAGE_OVER_TIME;
+    }
+
+    return EffectType.UNCLASSIFIED;
   }
 
   public int getLevel() {
     return level;
+  }
+
+  public ResistType getResistType() {
+    return sd.getResistType();
   }
 
   /**

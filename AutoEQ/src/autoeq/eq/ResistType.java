@@ -1,0 +1,5 @@
+package autoeq.eq;
+
+public enum ResistType {
+  NONE, MAGIC, FIRE, COLD, POISON, DISEASE, CHROMATIC, PRISMATIC, PHYSICAL, CORRUPTION, UNKNOWN
+}

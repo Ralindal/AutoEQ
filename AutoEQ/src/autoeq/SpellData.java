@@ -1,6 +1,7 @@
 package autoeq;
 
 import autoeq.DebuffCounter.Type;
+import autoeq.eq.ResistType;
 
 public class SpellData {
   public static final int ATTRIB_DAMAGE = 0;
@@ -39,6 +40,8 @@ public class SpellData {
   private final int brdLevel;
   private final int shortBuff;
 
+  private final ResistType resistType;
+
   public SpellData(String[] fields) {
     this.id = Integer.parseInt(fields[0]);
     this.name = fields[1];
@@ -52,6 +55,20 @@ public class SpellData {
 //    this.durationType = Integer.parseInt(fields[16]);
 //    this.durationValue = Integer.parseInt(fields[17]);
     this.mana = toInt(fields[19]);
+
+    int resistCode = toInt(fields[85]);  // resist
+
+    this.resistType = resistCode == 0 ? ResistType.NONE :
+                      resistCode == 1 ? ResistType.MAGIC :
+                      resistCode == 2 ? ResistType.FIRE :
+                      resistCode == 3 ? ResistType.COLD :
+                      resistCode == 4 ? ResistType.POISON :
+                      resistCode == 5 ? ResistType.DISEASE :
+                      resistCode == 6 ? ResistType.CHROMATIC :
+                      resistCode == 7 ? ResistType.PRISMATIC :
+                      resistCode == 8 ? ResistType.PHYSICAL :
+                      resistCode == 9 ? ResistType.CORRUPTION :
+                                        ResistType.UNKNOWN;
 
     for(int i = 0; i < 12; i++) {
       base[i] = toFloat(fields[i + 20]);
@@ -173,6 +190,10 @@ public class SpellData {
 
   public int getCastTime() {
     return castTime;
+  }
+
+  public ResistType getResistType() {
+    return resistType;
   }
 
   public float getBase(int index) {
