@@ -6,9 +6,11 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -72,7 +74,9 @@ public class Ini2 implements Iterable<Section> {
     }
   }
 
-  private static final Pattern SECTION_PATTERN = Pattern.compile("\\[([-A-Za-z0-9\\.]+)\\](\\s*:\\s*\\[([-A-Za-z0-9\\.]+)\\])?");
+  private static final String IDENTIFIER = "[-A-Za-z0-9\\.]+";
+  private static final String PARENTS = IDENTIFIER + "(?:\\s*,\\s*" + IDENTIFIER + ")*";
+  private static final Pattern SECTION_PATTERN = Pattern.compile("\\[(" + IDENTIFIER + ")\\](\\s*:\\s*\\[(" + PARENTS + ")\\])?");
 
   private static Map<String, Section> readIniFile(File iniFile) throws IOException {
     try(BufferedReader reader = new BufferedReader(new FileReader(iniFile))) {
@@ -93,17 +97,22 @@ public class Ini2 implements Iterable<Section> {
           String sectionName = matcher.group(1);
           currentSection = sections.get(sectionName);
 
-          Section parentSection = null;
+          List<Section> parentSections = new ArrayList<>();
 
           if(matcher.group(3) != null) {
-            parentSection = sections.get(matcher.group(3));
-            if(parentSection == null) {
-              throw new RuntimeException("Parse Error, Parent '" + matcher.group(3) + "' not found for section '" + sectionName + "'");
+            for(String parentSectionName : matcher.group(3).split(",")) {
+              Section parentSection = sections.get(parentSectionName.trim());
+
+              if(parentSection == null) {
+                throw new RuntimeException("Parse Error, Parent '" + parentSectionName.trim() + "' not found for section '" + sectionName + "'");
+              }
+
+              parentSections.add(parentSection);
             }
           }
 
           if(currentSection == null) {
-            currentSection = new Section(sectionName, parentSection);
+            currentSection = new Section(sectionName, parentSections);
             sections.put(currentSection.getName(), currentSection);
           }
         }

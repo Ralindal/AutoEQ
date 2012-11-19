@@ -1,6 +1,7 @@
 package autoeq.ini;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -8,12 +9,13 @@ import java.util.Map;
 
 public class Section implements Iterable<String> {
   private final String name;
-  private final Section parent;
+  private final List<Section> parents;
   private final Map<String, List<String>> values = new LinkedHashMap<>();
 
-  public Section(String name, Section parent) {
+  @SuppressWarnings("unchecked")
+  public Section(String name, List<Section> parents) {
     this.name = name;
-    this.parent = parent;
+    this.parents = parents == null ? (List<Section>)Collections.EMPTY_LIST : parents;
   }
 
   public String getName() {
@@ -47,7 +49,7 @@ public class Section implements Iterable<String> {
       results.addAll(values.get(key));
     }
 
-    if(parent != null) {
+    for(Section parent : parents) {
       results.addAll(parent.getAll(key));
     }
 
