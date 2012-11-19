@@ -8,13 +8,21 @@ import java.net.ConnectException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import autoeq.eq.EverquestSession;
-import autoeq.eq.Spawn;
+
+// For MQ2Telnet:
+// TODO Add MaxMeleeRange for Spawns
+// TODO Add GameState
+// TODO Aura information!
+
+// Important:
+// TODO Modules should reconfigure, not completely reset
+// TODO Better parameter handling
+// TODO Somekind of lock problem with BOT_UPDATE events
 
 // TODO Donot pull if there's a dead group member
 
@@ -75,6 +83,16 @@ public class AutoEQ {
           public void handle(BotUpdateEvent event) {
             synchronized(LAST_BOT_UPDATE_EVENTS) {
               LAST_BOT_UPDATE_EVENTS.put(event.getName(), event);
+
+              // Remove any events older than 5 seconds
+              for(Iterator<BotUpdateEvent> iterator = LAST_BOT_UPDATE_EVENTS.values().iterator(); iterator.hasNext();) {
+                BotUpdateEvent e = iterator.next();
+
+                if(e.getEventAge() > 5000) {
+                  System.err.println("Removed old bot event: " + e);
+                  iterator.remove();
+                }
+              }
             }
           }
         });
@@ -89,7 +107,7 @@ public class AutoEQ {
     }
 
     for(EverquestSession session : sessions) {
-      new Thread(new PulseThread(session)).start();
+      new Thread(new PulseThread(session), "PulseThread(" + session + ")").start();
     }
   }
 
@@ -107,44 +125,16 @@ public class AutoEQ {
           long startMillis = System.currentTimeMillis();
 
           try {
-            session.pulse();
+            Map<String, BotUpdateEvent> lastBotUpdateEvents;
 
             synchronized(LAST_BOT_UPDATE_EVENTS) {
-
-              /*
-               * Update bot information for this session
-               */
-
-              Set<String> botNames = new HashSet<>();
-
-              for(BotUpdateEvent botUpdateEvent : LAST_BOT_UPDATE_EVENTS.values()) {
-                botNames.add(botUpdateEvent.getName());
-
-                Spawn botSpawn = session.getSpawn(botUpdateEvent.getSpawnId());
-
-                if(botSpawn != null && !botSpawn.isMe() && session.getZoneId() == botUpdateEvent.getZoneId()) {
-                  if(botUpdateEvent.getSpellDurations() != null) {
-                    String buffIds = "";
-
-                    for(int spellId : botUpdateEvent.getSpellDurations().keySet()) {
-                      if(!buffIds.isEmpty()) {
-                        buffIds += " ";
-                      }
-                      buffIds += spellId;
-                    }
-
-                    botSpawn.updateBuffs(buffIds);
-                  }
-
-                  botSpawn.updateHealth(botUpdateEvent.getHealthPct());
-                  botSpawn.updateMana(botUpdateEvent.getManaPct());
-                  botSpawn.updateEndurance(botUpdateEvent.getEndurancePct());
-                  botSpawn.updateTarget(botUpdateEvent.getTargetId());
-                }
-              }
-
-              session.setBotNames(botNames);
+              lastBotUpdateEvents = new HashMap<>(LAST_BOT_UPDATE_EVENTS);
             }
+
+            session.pulse(lastBotUpdateEvents.values());
+          }
+          catch(SessionEndedException e) {
+            break;
           }
           catch(Exception e) {
             System.err.println("Exception occured for session " + session);
@@ -162,6 +152,8 @@ public class AutoEQ {
       catch(InterruptedException e) {
         throw new RuntimeException(e);
       }
+
+      System.err.println("EQ Session ended, pulse thread exiting: " + session);
     }
   }
 }

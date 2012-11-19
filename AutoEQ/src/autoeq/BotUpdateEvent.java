@@ -12,7 +12,10 @@ public class BotUpdateEvent extends Event {
   private final int endurancePct;
   private final int zoneId;
 
+  private final long eventTime;
+
   public BotUpdateEvent(String name, int zoneId, int spawnId, Map<Integer, Long> spellDurations, int healthPct, int manaPct, int endurancePct, int targetId) {
+    this.eventTime = System.currentTimeMillis();
     this.name = name;
     this.zoneId = zoneId;
     this.spawnId = spawnId;
@@ -21,6 +24,10 @@ public class BotUpdateEvent extends Event {
     this.manaPct = manaPct;
     this.endurancePct = endurancePct;
     this.targetId = targetId;
+  }
+
+  public long getEventAge() {
+    return System.currentTimeMillis() - eventTime;
   }
 
   public int getZoneId() {

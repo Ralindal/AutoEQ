@@ -12,6 +12,7 @@ import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
@@ -27,16 +28,17 @@ import java.util.Set;
 import java.util.logging.FileHandler;
 import java.util.logging.Formatter;
 import java.util.logging.Handler;
+import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-
 import autoeq.BotUpdateEvent;
 import autoeq.EventHandler;
 import autoeq.EverquestModule;
 import autoeq.ExpressionEvaluator;
+import autoeq.SessionEndedException;
 import autoeq.SpellData;
 import autoeq.effects.AlternateAbilityEffect;
 import autoeq.effects.DisciplineEffect;
@@ -79,7 +81,9 @@ public class EverquestSession {
   private boolean zoning = true;
   private Logger logger;
 
+  private String gameState = "INGAME";  // INGAME, CHARSELECT
   private Module activeModule;
+  private volatile boolean ioThreadActive = true;
   private boolean debug = false;
 
   public EverquestSession(Map<Integer, SpellData> rawSpellData, File globalIniFile, String host, int port, String username, String password) throws UnknownHostException, IOException, InterruptedException {
@@ -131,6 +135,13 @@ public class EverquestSession {
 
     //onFinishedZoning();
     sessionName = "EverquestSession(" + port + ")";
+
+    registerExpression("${MacroQuest.GameState}", new ExpressionListener() {
+      @Override
+      public void stateUpdated(String result) {
+        gameState = result;
+      }
+    });
   }
 
   public void addModule(Module module) {
@@ -206,6 +217,10 @@ public class EverquestSession {
     return zoneId;
   }
 
+  public String getGameState() {
+    return gameState;
+  }
+
   public void setCastLockOut(long ms) {
     castLockEndMillis = System.currentTimeMillis() + ms;
   }
@@ -242,8 +257,45 @@ public class EverquestSession {
 
   private long lastUpdate = 0;
 
-  public void pulse() {
+  public void pulse(Collection<BotUpdateEvent> lastBotUpdateEvents) {
     try {
+      if(getGameState().equals("INGAME")) {
+
+        /*
+         * Update bot information for this session
+         */
+
+        Set<String> botNames = new HashSet<>();
+
+        for(BotUpdateEvent botUpdateEvent : lastBotUpdateEvents) {
+          botNames.add(botUpdateEvent.getName());
+
+          Spawn botSpawn = getSpawn(botUpdateEvent.getSpawnId());
+
+          if(botSpawn != null && !botSpawn.isMe() && getZoneId() == botUpdateEvent.getZoneId()) {
+            if(botUpdateEvent.getSpellDurations() != null) {
+              String buffIds = "";
+
+              for(int spellId : botUpdateEvent.getSpellDurations().keySet()) {
+                if(!buffIds.isEmpty()) {
+                  buffIds += " ";
+                }
+                buffIds += spellId;
+              }
+
+              botSpawn.updateBuffs(buffIds);
+            }
+
+            botSpawn.updateHealth(botUpdateEvent.getHealthPct());
+            botSpawn.updateMana(botUpdateEvent.getManaPct());
+            botSpawn.updateEndurance(botUpdateEvent.getEndurancePct());
+            botSpawn.updateTarget(botUpdateEvent.getTargetId());
+          }
+        }
+
+        setBotNames(botNames);
+      }
+
 //      if(zoning) {
 //        onFinishedZoning();
 //        // if we make it to here without ZoningException, zoning is over.
@@ -410,6 +462,8 @@ public class EverquestSession {
         if(!zoning) {
           System.out.println("ZONING DETECTED");
         }
+        spawns.clear();
+        zoneId = -1;
         zoning = true;
         Thread.sleep(2000);
       }
@@ -465,7 +519,7 @@ public class EverquestSession {
 
       if(!(dataBurst.get(0).startsWith("#F") || dataBurst.get(0).startsWith("#M"))) {
         // Discard this burst as it contains no valid start
-        //logErr("Discarding a databurst, starts with: " + dataBurst.get(0));
+        // logErr("Discarding a databurst, starts with: " + dataBurst.get(0));
         continue;
       }
 
@@ -649,7 +703,7 @@ public class EverquestSession {
       for(Spell spell : me.getSpellEffects()) {
         SpellEffectManager manager = me.getSpellEffectManager(spell);
 
-        long timeLeft = manager.getDuration();
+        long timeLeft = manager.getMillisLeft();
 
         if(timeLeft > 0) {
           spellDurations.put(spell.getId(), timeLeft);
@@ -693,7 +747,7 @@ public class EverquestSession {
 
   @Override
   public String toString() {
-    return sessionName;
+    return sessionName + ":zoneId=" + getZoneId() + ":" + getMe();
   }
 
   public Ini2 getIni() {
@@ -713,19 +767,21 @@ public class EverquestSession {
   }
 
   public void log(String text) {
-    String hp = getMe() == null ? "---" : String.format("%3d", getMe().getHitPointsPct());
-    String mana = getMe() == null ? "---" : String.format("%3d", getMe().getManaPct());
-    String end = getMe() == null ? "---" : String.format("%3d", getMe().getEndurancePct());
-
-    System.out.printf("%3s/%3s/%3s %-10s " + text + "%n", hp, mana, end, "<" + charName + ">");
+    String logLine = createLogLine(text);
+    System.out.println(logLine);
   }
 
   public void logErr(String text) {
+    String logLine = createLogLine(text);
+    System.err.println(logLine);
+  }
+
+  private String createLogLine(String text) {
     String hp = getMe() == null ? "---" : String.format("%3d", getMe().getHitPointsPct());
     String mana = getMe() == null ? "---" : String.format("%3d", getMe().getManaPct());
     String end = getMe() == null ? "---" : String.format("%3d", getMe().getEndurancePct());
 
-    System.err.printf("%3s/%3s/%3s %-10s " + text + "%n", hp, mana, end, "<" + charName + ">");
+    return String.format("%3s/%3s/%3s %-10s " + text + "%n", hp, mana, end, "<" + charName + ">");
   }
 
   public void setDebug(boolean debug) {
@@ -760,7 +816,9 @@ public class EverquestSession {
   public void doCommand(String s) {
     thread.doCommand(s);
     //log("CMD: " + s);
-    logger.info("CMD: " + s);
+    if(logger != null) {
+      logger.info("CMD: " + s);
+    }
     if(debug) {
     }
   }
@@ -838,6 +896,10 @@ public class EverquestSession {
       }
       if(chatLines.size() >= 1000 && chatLines.size() % 1000 == 0) {
         System.err.println("WARNING: Chat line buffer contains " + chatLines.size() + " lines (unprocessed bursts = " + unprocessedDataBurstCount +", + " + getMe() + ")!");
+
+        if(logger != null) {
+          logger.fine("WARNING: Chat line buffer contains " + chatLines.size() + " lines (unprocessed bursts = " + unprocessedDataBurstCount +", + " + getMe() + ")!");
+        }
         if(chatLines.size() >= 100000) {
           System.err.println("WARNING: Discarding all lines to prevent running out of memory");
           chatLines.clear();
@@ -1087,7 +1149,7 @@ public class EverquestSession {
     }
 
     try {
-      FileHandler fileHandler = new FileHandler("logs/" + charName + ".%g.txt", 1048576, 10, true);
+      FileHandler fileHandler = new FileHandler("logs/" + charName + ".%g.txt", 10485760 * 2, 5, true);
 
       final DateFormat dateFormat = new SimpleDateFormat("dd-MM-yyyy HH:mm:ss.SSS");
 
@@ -1113,6 +1175,7 @@ public class EverquestSession {
         }
       });
 
+      logger.setLevel(Level.FINEST);
       logger.setUseParentHandlers(false);
       logger.addHandler(fileHandler);
     }
@@ -1376,6 +1439,7 @@ public class EverquestSession {
       this.reader = reader;
       this.writer = writer;
 
+      setName("IOThread(" + EverquestSession.this + ")");
       setPriority(Thread.NORM_PRIORITY + 2);
     }
 
@@ -1391,25 +1455,41 @@ public class EverquestSession {
 
     public String waitForResponse(String s) {
       synchronized(waiters) {
+        if(!ioThreadActive) {
+          throw new SessionEndedException();
+        }
+
         int n = responseNumber++;
 
         lastProcessedMillis = System.currentTimeMillis();
         lastResponseNumber = responseNumber;
 
-        writer.println("$" + n + "-" + s);
+        String output = "$" + n + "-" + s;
+        writer.println(output);
         writer.flush();
+        if(logger != null) {
+          logger.finest(output);
+        }
         waiters.put(n, s);
 
         while(!responses.containsKey(n)) {
           try {
             waiters.wait();
+
+            if(!ioThreadActive) {
+              throw new SessionEndedException();
+            }
           }
           catch(InterruptedException e) {
             throw new RuntimeException(e);
           }
         }
 
-        return responses.remove(n);
+        String result = responses.remove(n);
+        if(logger != null) {
+          logger.finest(output + " -> " + result);
+        }
+        return result;
       }
     }
 
@@ -1496,8 +1576,8 @@ public class EverquestSession {
                 if(dash > 0) {
                   int responseNo = Integer.parseInt(line.substring(1, dash));
                   if(waiters.remove(responseNo) == null) {
-                    getLogger().warning("RESPONSE_DEBUG2: Unexpected response: " + line);
-                    System.err.println("Unexpected response: " + line);
+                    getLogger().warning("RESPONSE_DEBUG2: Unexpected response " + responseNo + ": " + line);
+                    System.err.println("Unexpected response " + responseNo + ": " + line);
                   }
                   else {
                     responses.put(responseNo, line.substring(dash + 1));
@@ -1540,6 +1620,11 @@ public class EverquestSession {
         for(int key : waiters.keySet()) {
           logger.severe(" " + key + ": " + waiters.get(key));
           System.err.println(" " + key + ": " + waiters.get(key));
+        }
+
+        synchronized(waiters) {
+          ioThreadActive = false;
+          waiters.notifyAll();
         }
 
         throw new RuntimeException(e);
