@@ -135,42 +135,51 @@ public class CampModule implements Module {
                 campSet = false;
                 campMode = CampMode.NONE;
               }
-              else if((!me.inCombat() && me.getDistance(campX, campY) > radius) || me.getDistance(campX, campY) > maxRadius) {
-                if(me.getDistance(campX, campY) > 400) {
-                  session.log("CAMP: We're very far away from camp.  Resetting camp location.");
-                  campSet = false;
+              else {
+                double distanceFromCamp = me.getDistance(campX, campY);
+
+                if((!me.inCombat() && distanceFromCamp > radius) || distanceFromCamp > maxRadius) {
+                  if(distanceFromCamp > 400) {
+                    session.log("CAMP: We're very far away from camp.  Resetting camp location.");
+                    campSet = false;
+                  }
+                  else {
+                    session.log("CAMP: We're outside camp radius, moving back");
+
+                    if(distanceFromCamp < radius * 2) {
+                      MoveUtils.moveBackwardsTo(session, campX, campY);
+                    }
+                    else {
+                      MoveUtils.moveTo(session, campX, campY);
+                    }
+                  }
                 }
-                else {
-                  session.log("CAMP: We're outside camp radius, moving back");
+                else if(!me.inCombat() && maintainFellowshipCamp && fellowshipCampExpiryTime < System.currentTimeMillis()) {
+                  fellowshipCampExpiryTime = System.currentTimeMillis() + 30 * 60 * 1000;
 
-                  MoveUtils.moveBackwardsTo(session, campX, campY);
+                  session.doCommand("/windowstate FellowshipWnd open");
+                  session.doCommand("/nomodkey /notify FellowshipWnd FP_Subwindows tabselect 2");
+                  session.delay(500);
+                  session.doCommand("/nomodkey /notify FellowshipWnd FP_RefreshList leftmouseup");
+                  session.delay(500);
+                  session.doCommand("/nomodkey /notify FellowshipWnd FP_CampsiteKitList listselect 1");
+                  session.delay(500);
+                  session.doCommand("/nomodkey /notify FellowshipWnd FP_CampsiteKitList leftmouse 1");
+                  session.delay(500);
+                  session.doCommand("/nomodkey /notify FellowshipWnd FP_DestroyCampsite leftmouseup");
+
+                  if(session.delay(1000, "${Window[ConfirmationDialogBox].Open}")) {
+                    session.doCommand("/nomodkey /notify ConfirmationDialogBox Yes_Button leftmouseup");
+                    session.delay(1000);
+                  }
+
+                  session.delay(500);
+                  session.doCommand("/nomodkey /notify FellowshipWnd FP_CreateCampsite leftmouseup");
+                  session.delay(500);
+                  session.doCommand("/windowstate FellowshipWnd close");
+
+                  session.echo("CAMP: Set new fellowship camp");
                 }
-              }
-              else if(!me.inCombat() && maintainFellowshipCamp && fellowshipCampExpiryTime < System.currentTimeMillis()) {
-                fellowshipCampExpiryTime = System.currentTimeMillis() + 30 * 60 * 1000;
-
-                session.doCommand("/windowstate FellowshipWnd open");
-                session.doCommand("/nomodkey /notify FellowshipWnd FP_Subwindows tabselect 2");
-                session.delay(500);
-                session.doCommand("/nomodkey /notify FellowshipWnd FP_RefreshList leftmouseup");
-                session.delay(500);
-                session.doCommand("/nomodkey /notify FellowshipWnd FP_CampsiteKitList listselect 1");
-                session.delay(500);
-                session.doCommand("/nomodkey /notify FellowshipWnd FP_CampsiteKitList leftmouse 1");
-                session.delay(500);
-                session.doCommand("/nomodkey /notify FellowshipWnd FP_DestroyCampsite leftmouseup");
-
-                if(session.delay(1000, "${Window[ConfirmationDialogBox].Open}")) {
-                  session.doCommand("/nomodkey /notify ConfirmationDialogBox Yes_Button leftmouseup");
-                  session.delay(1000);
-                }
-
-                session.delay(500);
-                session.doCommand("/nomodkey /notify FellowshipWnd FP_CreateCampsite leftmouseup");
-                session.delay(500);
-                session.doCommand("/windowstate FellowshipWnd close");
-
-                session.echo("CAMP: Set new fellowship camp");
               }
 
               Spawn nearestEnemy = null;
