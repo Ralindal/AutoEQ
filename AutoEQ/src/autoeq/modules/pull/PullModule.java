@@ -37,6 +37,8 @@ public class PullModule implements Module {
   private final List<List<Node>> paths = new ArrayList<>();
   private final List<String> conditions;
   private final String validTargets;
+  private final String prePullBandolier;
+  private final String postPullBandolier;
 
   private final Condition earlyExit = new Condition() {
     @Override
@@ -64,11 +66,15 @@ public class PullModule implements Module {
       active = section.getDefault("Active", "true").toLowerCase().equals("true");
       validTargets = section.getDefault("ValidTargets", "war pal shd mnk rog ber rng bst brd clr shm dru enc mag nec wiz");
       conditions = section.getAll("Condition");
+      prePullBandolier = section.get("PrePullBandolier");
+      postPullBandolier = section.get("PostPullBandolier");
     }
     else {
       active = false;
       validTargets = "";
       conditions = new ArrayList<>();
+      prePullBandolier = null;
+      postPullBandolier = null;
     }
 
     session.addUserCommand("pulloption", Pattern.compile("(status|effect (.*)|ignoreagro ([0-9]+)|order (path|density)|zrange ([0-9]+)|nameds (pull|leave))"), "(status|effect <method>|ignoreagro <seconds>|order <path|density>|zrange <range>|nameds <pull|leave>)", new UserCommand() {
@@ -177,46 +183,57 @@ public class PullModule implements Module {
         Pair<List<Node>, List<Spawn>> result = selectPath();
 
         if(result != null) {
-          List<Node> path = result.getA();
-          MoveUtils2.moveTowards(session, path.get(0).x, path.get(0).y);
-
-          Path pullPath = new Path(session);
-
-          pullPath.record();
+          if(prePullBandolier != null) {
+            session.doCommand("/bandolier activate " + prePullBandolier);
+          }
 
           try {
+            List<Node> path = result.getA();
+            MoveUtils2.moveTowards(session, path.get(0).x, path.get(0).y);
+
+            Path pullPath = new Path(session);
+
+            pullPath.record();
+
             try {
-              Node endNode = pullAlongPath(path, result.getB());
+              try {
+                Node endNode = pullAlongPath(path, result.getB());
 
-              pullPath.stopRecording();
+                pullPath.stopRecording();
 
-              if(!me.inCombat()) {
-                if(ignoreAgroMillis == 0) {
-                  List<Spawn> spawnsAtNode = getSpawns(endNode);
+                if(!me.inCombat()) {
+                  if(ignoreAgroMillis == 0) {
+                    List<Spawn> spawnsAtNode = getSpawns(endNode);
 
-                  if(spawnsAtNode.size() > 0) {
-                    agroSpawn(spawnsAtNode.get(0), endNode);
+                    if(spawnsAtNode.size() > 0) {
+                      agroSpawn(spawnsAtNode.get(0), endNode);
+                    }
                   }
                 }
               }
-            }
-            catch(MoveException e) {
-              session.log("Problem during pull, attempting to return home: " + e);
-            }
-            // returnHome();
+              catch(MoveException e) {
+                session.log("Problem during pull, attempting to return home: " + e);
+              }
+              // returnHome();
 
-            session.log("PULL: Returning home");
+              session.log("PULL: Returning home");
 
-            pullPath.playbackReverse();
-            if(path.size() > 1) {
-              session.doCommand(String.format("/face nolook loc %.2f,%.2f", path.get(1).y, path.get(1).x));
+              pullPath.playbackReverse();
+              if(path.size() > 1) {
+                session.doCommand(String.format("/face nolook loc %.2f,%.2f", path.get(1).y, path.get(1).x));
+              }
+
+              // session.echo("PULL: Done");
             }
-
-            // session.echo("PULL: Done");
+            finally {
+              MoveUtils2.stop(session);
+              pullPath.stopRecording();
+            }
           }
           finally {
-            MoveUtils2.stop(session);
-            pullPath.stopRecording();
+            if(postPullBandolier != null) {
+              session.doCommand("/bandolier activate " + postPullBandolier);
+            }
           }
         }
       }
