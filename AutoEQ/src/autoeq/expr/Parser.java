@@ -217,7 +217,7 @@ public class Parser {
     return results.get(results.size() - 1);
   }
 
-  private static Pattern ALPHA = Pattern.compile("[A-Za-z]+");
+  private static Pattern IDENTIFIER = Pattern.compile("[_A-Za-z][_A-Za-z0-9]*");
   private static Pattern INTEGER = Pattern.compile("-?[0-9]+");
 
   private static List<Object> parse(Object root, List<Token> tokens, int level, boolean parseOnly) throws SyntaxException {
@@ -298,7 +298,7 @@ public class Parser {
         if(token.getText().equals("null")) {
           result = null;
         }
-        else if(token.matches(ALPHA) && !token.getText().equals("contains")) {
+        else if(token.matches(IDENTIFIER) && !token.getText().equals("contains")) {
           result = callMethod(root, root, tokens, parseOnly, token);
         }
         else if(token.matches(INTEGER)) {
@@ -347,7 +347,7 @@ public class Parser {
       }
     }
     catch(NoSuchMethodException e) {
-      throw new SyntaxException("Unknown member of " + parent + ": " + token.getText(), token);
+      throw new SyntaxException("Unknown member of " + parent + ": " + token.getText(), token, e);
     }
   }
 
@@ -545,34 +545,21 @@ public class Parser {
     }
   }
 
-  private static Class<?> toPrimitive(Class<?> cls) {
-    if(cls.equals(Integer.class)) {
-      return int.class;
-    }
-    if(cls.equals(Double.class)) {
-      return double.class;
-    }
-    return cls;
-  }
-
   private static Object callMethod(Object root, String propertyName, List<Object> parameters) throws NoSuchMethodException {
     try {
       Method method;
-      Class<?>[] parameterClasses = new Class[parameters.size()];
-      int index = 0;
 
-      for(Object parameter : parameters) {
-        parameterClasses[index++] = toPrimitive(parameter.getClass());
+      method = searchForMethod(root.getClass(), propertyName, parameters.toArray());
+
+      if(method == null) {
+        method = searchForMethod(root.getClass(), "get" + propertyName.substring(0, 1).toUpperCase() + propertyName.substring(1), parameters.toArray());
       }
 
-      try {
-        method = root.getClass().getMethod(propertyName, parameterClasses);
-      }
-      catch(NoSuchMethodException e) {
-        method = root.getClass().getMethod("get" + propertyName.substring(0, 1).toUpperCase() + propertyName.substring(1), parameterClasses);
+      if(method == null) {
+        throw new NoSuchMethodException(propertyName);
       }
 
-      return method.invoke(root, parameters.toArray());
+      return method.invoke(root, InspectionUtils.convertSourcesToBeCompatible(method.getParameterTypes(), parameters.toArray()));
     }
     catch(SecurityException e) {
       throw new RuntimeException(e);
@@ -583,5 +570,29 @@ public class Parser {
     catch(InvocationTargetException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  private static Method searchForMethod(Class<?> type, String name, Object... parms) {
+    Method[] methods = type.getMethods();
+
+    for(int i = 0; i < methods.length; i++) {
+      // Has to be named the same of course.
+      if(!methods[i].getName().equals(name)) {
+        continue;
+      }
+
+      Class<?>[] types = methods[i].getParameterTypes();
+
+      // Does it have the same number of arguments that we're looking for.
+      if(types.length != parms.length) {
+        continue;
+      }
+
+      // Check for type compatibility
+      if(InspectionUtils.areTypesAlmostCompatible(types, parms)) {
+        return methods[i];
+      }
+    }
+    return null;
   }
 }
