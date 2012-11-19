@@ -362,6 +362,10 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     return getDistance(me.x, me.y);
   }
 
+  public double getDistance(Spawn spawn) {
+    return getDistance(spawn.x, spawn.y);
+  }
+
   /**
    * Distance to (x, y)
    */
@@ -420,7 +424,7 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     Set<String> names = new HashSet<>();
 
     for(SpellEffectManager manager : spellEffectManagers.values()) {
-      if(manager.getDuration() > 0) {
+      if(manager.getMillisLeft() > 0) {
 //        System.err.println(manager.getSpell().getName());
         names.add(manager.getSpell().getName());
       }
@@ -513,7 +517,7 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
 
   public int getDebuffCounters(DebuffCounter.Type type) {
     for(SpellEffectManager manager : spellEffectManagers.values()) {
-      if(manager.getDuration() > 0) {
+      if(manager.getMillisLeft() > 0) {
         DebuffCounter debuffCounters = manager.getSpell().getRawSpellData().getDebuffCounters();
 
         if(debuffCounters != null && debuffCounters.getType() == type) {
@@ -545,7 +549,7 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     int dot = 0;
 
     for(SpellEffectManager manager : spellEffectManagers.values()) {
-      if(manager.getDuration() > 0) {
+      if(manager.getMillisLeft() > 0) {
         dot += manager.getSpell().getDamageOverTime();
       }
     }
@@ -847,7 +851,7 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
           SpellEffectManager manager = getSpellEffectManager(spellId);
           toBeRemoved.remove(spellId);
 
-          manager.setDuration(60000);
+          manager.setMillisLeft(60000);
         }
       }
 
@@ -881,7 +885,7 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
           if(duration < 0) {
             duration = 10; // in ticks
           }
-          manager.setDuration(duration * 6000);
+          manager.setMillisLeft(duration * 6000);
         }
       }
 
@@ -1052,6 +1056,33 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
 //    return 0;
 //  }
 
+
+  public SpellEffectManager getActiveEffect(EffectType effectType) {
+    SpellEffectManager bestEffectManager = null;
+    long bestDuration = 0;
+
+    for(SpellEffectManager manager : spellEffectManagers.values()) {
+      long duration = manager.getMillisLeft();
+
+      if(duration > bestDuration && manager.getSpell().getEffectType() == effectType) {
+        bestDuration = duration;
+        bestEffectManager = manager;
+      }
+    }
+
+    return bestEffectManager;
+  }
+
+  public boolean hasGiftOfMana() {
+    for(String name : getBuffNames()) {
+      if(name.startsWith("Gift of ") && name.endsWith(" Mana")) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   /**
    * Returns all effects present on this spawn.
    *
@@ -1061,7 +1092,7 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     Set<Spell> buffs = new HashSet<>();
 
     for(SpellEffectManager manager : spellEffectManagers.values()) {
-      if(manager.getDuration() > 0) {
+      if(manager.getMillisLeft() > 0) {
         buffs.add(manager.getSpell());
       }
     }

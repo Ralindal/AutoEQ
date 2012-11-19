@@ -109,17 +109,21 @@ public class SpellEffectManager {
    * from multiple casts).
    */
   public long getTotalDuration() {
-    return (long)castCount * (spell.getDuration() * 1000 + 6000) - (lastCastWasSuccess ? getDuration() : 0);
+    return (long)castCount * (spell.getDuration() * 1000 + 6000) - (lastCastWasSuccess ? getMillisLeft() : 0);
   }
 
   public long getLastCastMillis() {
     return lastCastMillis;
   }
 
+  public int getSecondsLeft() {
+    return (int)(getMillisLeft() / 1000);
+  }
+
   /**
    * @return duration before this effect runs out in milliseconds
    */
-  public long getDuration() {
+  public long getMillisLeft() {
     long duration = untilMillis - System.currentTimeMillis();
 
     if(duration < 0) {
@@ -129,7 +133,7 @@ public class SpellEffectManager {
     return duration;
   }
 
-  public void setDuration(long millis) {
+  public void setMillisLeft(long millis) {
     if(!unupdatable) {
       untilMillis = System.currentTimeMillis() + millis;
       unremovable = false;
@@ -157,6 +161,6 @@ public class SpellEffectManager {
   }
 
   public boolean isRemoveable() {
-    return !unremovable || getDuration() == 0;
+    return !unremovable || getMillisLeft() == 0;
   }
 }
