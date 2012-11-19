@@ -1,16 +1,28 @@
 package autoeq;
 
+import static org.junit.Assert.*;
+
 import java.util.Arrays;
 import java.util.Collection;
+
+import org.junit.Test;
 
 import autoeq.expr.Parser;
 import autoeq.expr.SyntaxException;
 
-import junit.framework.TestCase;
+public class ParserTestCase {
+  private final Root root = new Root(new Me(), new Spawn());
 
-public class ParserTestCase extends TestCase {
-  private final Root root = new Root(new Spawn(), new Spawn());
+  @Test
+  public void shouldSupportEnum() throws SyntaxException {
+    assertEquals(State.ALIVE, Parser.parse(root, "me.state"));
+    assertTrue((Boolean)Parser.parse(root, "me.state == \"ALIVE\""));
+    assertFalse((Boolean)Parser.parse(root, "me.state == \"DEAD\""));
+    assertTrue((Boolean)Parser.parse(root, "me.inState(\"ALIVE\")"));
+    assertFalse((Boolean)Parser.parse(root, "me.inState(\"DEAD\")"));
+  }
 
+  @Test
   public void testParse() throws SyntaxException {
     assertTrue((Boolean)Parser.parse(root, "0 == 1 || 1 == 1"));
     assertTrue((Boolean)Parser.parse(root, "target.mana < 95 || target.mana > 99"));
@@ -31,7 +43,7 @@ public class ParserTestCase extends TestCase {
     assertFalse((Boolean)Parser.parse(root, "target.mana > 20 && !target.notInCombat && !(target.names contains \"Testchar Deluxe\")"));
     assertTrue((Boolean)Parser.parse(root, "target.mana > 20 && !target.notInCombat && !(target.names contains \"Testchar\")"));
 
-    assertEquals(45.0, (double)(Double)Parser.parse(root, "2 + 6 / 2 + 8 * (3 + 2)"));
+    assertEquals(45.0, (Double)Parser.parse(root, "2 + 6 / 2 + 8 * (3 + 2)"), 0.00001);
 
     assertTrue((Boolean)Parser.parse(root, "me.names contains \"Testchar Deluxe\""));
     assertFalse((Boolean)Parser.parse(root, "me.names contains \"Testchar\""));
@@ -112,18 +124,26 @@ public class ParserTestCase extends TestCase {
     // Parameter test
     assertFalse((Boolean)Parser.parse(root, "me.isSameSpawn(target)"));
     assertTrue((Boolean)Parser.parse(root, "me.isSameSpawn(me)"));
+    assertFalse((Boolean)Parser.parse(root, "target.isSameSpawn(me)"));
+    assertEquals(0.0, Parser.parse(root, "target.distance"));
+    assertEquals(10.0, Parser.parse(root, "target.distance(me)"));
+    assertEquals(10.0, Parser.parse(root, "me.distance(target)"));
+  }
+
+  public enum State {
+    ALIVE, DEAD
   }
 
   public static class Root {
     private final Spawn target;
-    private final Spawn me;
+    private final Me me;
 
-    public Root(Spawn me, Spawn target) {
+    public Root(Me me, Spawn target) {
       this.me = me;
       this.target = target;
     }
 
-    public Spawn me() {
+    public Me me() {
       return me;
     }
 
@@ -156,6 +176,16 @@ public class ParserTestCase extends TestCase {
     }
   }
 
+  public static class Me extends Spawn {
+    public State getState() {
+      return State.ALIVE;
+    }
+
+    public boolean inState(State state) {
+      return state == State.ALIVE ? true : false;
+    }
+  }
+
   public static class Spawn {
     public boolean isMe() {
       return true;
@@ -179,6 +209,17 @@ public class ParserTestCase extends TestCase {
 
     public boolean notInCombat() {
       return false;
+    }
+
+    public double getDistance() {
+      return 0;
+    }
+
+    /**
+     * @param spawn
+     */
+    public double getDistance(Spawn spawn) {
+      return 10;
     }
 
     public int mana() {
