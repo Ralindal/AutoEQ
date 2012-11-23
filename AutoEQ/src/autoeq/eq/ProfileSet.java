@@ -29,6 +29,22 @@ public class ProfileSet {
     return profileNames.containsKey(profileName.toLowerCase());
   }
 
+  public void activate(String profileName) {
+    if(!contains(profileName)) {
+      throw new RuntimeException("No such profile: " + profileName);
+    }
+
+    activeKey = profileName.toLowerCase();
+  }
+
+  public void deactivate(String profileName) {
+    if(!contains(profileName)) {
+      throw new RuntimeException("No such profile: " + profileName);
+    }
+
+    activeKey = null;
+  }
+
   public void toggle(String profileName) {
     if(!contains(profileName)) {
       throw new RuntimeException("No such profile: " + profileName);

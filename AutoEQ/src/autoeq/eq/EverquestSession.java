@@ -1059,18 +1059,37 @@ public class EverquestSession {
       }
     });
 
-    addUserCommand("profile", Pattern.compile("(.+)"), "(help|<profile name>)", new UserCommand() {
+    addUserCommand("profile", Pattern.compile("(.+)"), "(status|<[+-]profile name(s)>)", new UserCommand() {
       @Override
       public void onCommand(Matcher matcher) {
-        String profileName = matcher.group(1).toLowerCase();
+        String profileNames = matcher.group(1).toLowerCase();
         boolean noSuchProfile = true;
 
-        if(!profileName.equals("help")) {
-          for(ProfileSet set : profileSets) {
-            if(set.contains(profileName)) {
-              set.toggle(profileName);
-              noSuchProfile = false;
-              break;
+        if(!profileNames.equals("status")) {
+          for(String profileNameSetting : profileNames.split(" ")) {
+            String profileName = profileNameSetting.startsWith("+") || profileNameSetting.startsWith("-") ? profileNameSetting.substring(1) : profileNameSetting;
+
+            for(ProfileSet set : profileSets) {
+              if(set.contains(profileName)) {
+                if(profileNameSetting.startsWith("+")) {
+                  set.activate(profileName);
+                  echo("==> Activated profile: " + profileName);
+                }
+                else if(profileNameSetting.startsWith("-")) {
+                  set.deactivate(profileName);
+                  echo("==> Deactivated profile: " + profileName);
+                }
+                else {
+                  set.toggle(profileName);
+                  echo("==> Toggled profile: " + profileName);
+                }
+                noSuchProfile = false;
+                break;
+              }
+            }
+
+            if(noSuchProfile) {
+              echo("==> No such profile exists: " + profileName);
             }
           }
         }
@@ -1084,17 +1103,7 @@ public class EverquestSession {
           availableProfiles += set.toString();
         }
 
-        if(profileName.equals("help")) {
-          echo("==> Status: " + availableProfiles);
-        }
-        else if(noSuchProfile) {
-          echo("==> No such profile exists: " + profileName);
-          echo("==> Status: " + availableProfiles);
-        }
-        else {
-          echo("==> Toggled profile: " + profileName);
-          echo("==> Status: " + availableProfiles);
-        }
+        echo("==> Status: " + availableProfiles);
       }
     });
   }
@@ -1113,13 +1122,13 @@ public class EverquestSession {
       for(String className : globalIni.getSection("Modules").getAll("Class")) {
         try {
           Class<?> cls = Class.forName(className);
+          log("Loading " + cls.getSimpleName() + " ...");
 
           addModule((Module)injector.getInstance(cls));
 
 //          Constructor<?> constructor = cls.getConstructor(EverquestSession.class);
 //
 //          addModule((Module)constructor.newInstance(this));
-          System.out.println("Loaded " + cls.getSimpleName());
           log("Loaded " + cls.getSimpleName());
         }
         catch(ClassNotFoundException e) {
@@ -1394,7 +1403,7 @@ public class EverquestSession {
       return true;
     }
 
-    String expr = profiles.replaceAll(",", " || ").replaceAll("([a-zA-Z]+)", "isActive(\"$1\")");
+    String expr = profiles.replaceAll(",", " || ").replaceAll("([A-Za-z][a-zA-Z0-9]*)", "isActive(\"$1\")");
 
     return ExpressionEvaluator.evaluate(Arrays.asList(expr), new ProfileExpressionRoot(profileSets), profiles);
   }
