@@ -49,12 +49,11 @@ public class HealModule implements Module {
         Effect effect = effectSets.isEmpty() ? null : effectSets.get(0).getSingleOrGroup();
 
         if(effect != null) {
-          System.out.println("adding spell " + effect);
           heals.add(
             new Heal(
               effect,
               section.get("Gem") != null ? Integer.parseInt(section.get("Gem")) : 0,
-              Priority.decodePriority(section.get("Priority"), 100),
+              Priority.decodePriority(session, effect, section.get("Priority"), 100),
               section.get("ValidTargets"),
               section.get("Profile"),
               section.getAll("Condition")
@@ -165,7 +164,7 @@ public class HealModule implements Module {
 
   private class Heal implements SpellLine {
     private final int gem;
-    private final int priority;
+    private final double priority;
     private final Effect effect;
     private final String validTargets;
     private final String profiles;
@@ -173,7 +172,7 @@ public class HealModule implements Module {
 
     private boolean enabled = true;
 
-    public Heal(Effect effect, int gem, int priority, String validTargets, String profiles, List<String> conditions) {
+    public Heal(Effect effect, int gem, double priority, String validTargets, String profiles, List<String> conditions) {
       this.gem = gem;
       this.effect = effect;
       this.priority = priority;

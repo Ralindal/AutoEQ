@@ -3,6 +3,7 @@ package autoeq.modules.buff;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,27 +28,17 @@ import autoeq.ini.Section;
 
 import com.google.inject.Inject;
 
-
 @ThreadScoped
 public class BuffModule implements Module {
   private final EverquestSession session;
   private final List<BuffLine> buffLines = new ArrayList<>();
+  private final Set<String> activeProfiles = new HashSet<>();
 
   private boolean putPetOnHold;
 
   @Inject
   public BuffModule(EverquestSession session) {
     this.session = session;
-
-    for(Section section : session.getIni()) {
-      if(section.getName().startsWith("Buff.")) {
-        BuffLine buffLine = new BuffLine(session, section);
-
-        if(buffLine.hasEffects()) {
-          buffLines.add(buffLine);
-        }
-      }
-    }
   }
 
   @Override
@@ -56,6 +47,22 @@ public class BuffModule implements Module {
     Me me = session.getMe();
 
     if((!me.isMoving() || me.isBard()) && me.getType() == SpawnType.PC) {
+
+      if(!session.getActiveProfiles().equals(activeProfiles)) {
+        activeProfiles.clear();
+        activeProfiles.addAll(session.getActiveProfiles());
+        buffLines.clear();
+
+        for(Section section : session.getIni()) {
+          if(section.getName().startsWith("Buff.")) {
+            BuffLine buffLine = new BuffLine(session, section);
+
+            if(buffLine.hasEffects()) {
+              buffLines.add(buffLine);
+            }
+          }
+        }
+      }
 
       /*
        * Ensure buffs are memmed
@@ -115,11 +122,7 @@ public class BuffModule implements Module {
         }
       }
 
-//      System.out.println("List of potential targets (without pets):");
-//
-//      for(Spawn potentialTarget : potentialTargets) {
-//        System.out.println(potentialTarget);
-//      }
+//      System.out.println(me.getName() + ": List of potential targets (without pets): " + potentialTargets);
 
       List<Buff> buffs = handleBuffs(potentialTargets);
 
@@ -212,6 +215,15 @@ public class BuffModule implements Module {
           }
         }
       }
+    }
+
+    for(Iterator<Buff> iterator = buffs.iterator(); iterator.hasNext();) {
+      Buff buff = iterator.next();
+
+      if(!ActivateEffectCommand.checkRangeAndTargetType(buff.getEffect(), buff.getTargets())) {
+        iterator.remove();
+      }
+
     }
 
     return buffs;

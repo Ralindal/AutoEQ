@@ -15,6 +15,8 @@ public class SpellEffect implements Effect {
     MAX_GOM_LEVEL.put("Gift of Radiant Mana", 75);
     MAX_GOM_LEVEL.put("Gift of Exquisite Radiant Mana", 80);
     MAX_GOM_LEVEL.put("Gift of Amazing Exquisite Radiant Mana", 85);
+    MAX_GOM_LEVEL.put("Gift of Dreamlike Exquisite Radiant Mana", 90);
+    MAX_GOM_LEVEL.put("Gift of Ascendant Exquisite Radiant Mana", 95);
   }
 
   private final EverquestSession session;

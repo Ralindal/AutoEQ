@@ -1,21 +1,21 @@
 package autoeq.eq;
 
+import autoeq.effects.Effect;
+import autoeq.expr.Parser;
+import autoeq.expr.SyntaxException;
+
 public class Priority {
-  public static int decodePriority(String priority, int basePriority) {
+  public static double decodePriority(EverquestSession session, Effect effect, String priority, int basePriority) {
     if(priority == null) {
       return basePriority;
     }
-    
-    String p = priority.trim();
-    
-    if(p.startsWith("-")) {
-      return basePriority - Integer.parseInt(p.substring(1));
+
+    try {
+      return ((Number)Parser.parse(new ExpressionRoot(session, null, null, null, effect), priority)).doubleValue();
     }
-    else if(p.startsWith("+")) {
-      return basePriority + Integer.parseInt(p.substring(1));
-    }
-    else {
-      return Integer.parseInt(p);
+    catch(SyntaxException e) {
+      System.err.println("Error parsing priority '" + priority + "', using basePriority (" + basePriority + "): " + e);
+      return basePriority;
     }
   }
 }

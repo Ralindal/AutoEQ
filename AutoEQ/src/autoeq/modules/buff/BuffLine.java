@@ -20,7 +20,7 @@ public class BuffLine implements Iterable<EffectSet> {
   private final List<EffectSet> effectSets;
   private final String name;
   private final int gem;
-  private final int priority;
+  private final double priority;
 
   private boolean enabled = true;
 
@@ -30,8 +30,14 @@ public class BuffLine implements Iterable<EffectSet> {
     this.profiles = section.get("Profile");
     this.name = section.getName();
     this.conditions = section.getAll("Condition");
-    this.priority = Priority.decodePriority(section.get("Priority"), 300);
     this.effectSets = SpellParser.parseSpells(session, section, 10);
+
+    if(effectSets.isEmpty()) {
+      this.priority = 300;
+    }
+    else {
+      this.priority = Priority.decodePriority(session, effectSets.get(0).getSingleOrGroup(), section.get("Priority"), 300);
+    }
   }
 
   public boolean hasEffects() {

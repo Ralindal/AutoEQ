@@ -65,7 +65,7 @@ public class DebuffModule implements Module {
             if(effectSets.size() > 0) {
               Effect effect = effectSets.get(0).getSingleOrGroup();
               int gem = section.get("Gem") != null ? Integer.parseInt(section.get("Gem")) : 0;
-              debuffLines.add(new DebuffLine(gem, effect, section.get("ValidTargets"), section.get("Profile"), Priority.decodePriority(section.get("Priority"), 200), section.get("TargetType").equals("main"), section.getAll("Condition")));
+              debuffLines.add(new DebuffLine(gem, effect, section.get("ValidTargets"), section.get("Profile"), Priority.decodePriority(session, effect, section.get("Priority"), 200), section.get("TargetType").equals("main"), section.getAll("Condition")));
             }
           }
         }
@@ -182,11 +182,11 @@ public class DebuffModule implements Module {
     private final String profiles;
     private final String validTargets;
     private final boolean mainOnly;
-    private final int priority;
+    private final double priority;
 
     private boolean enabled = true;
 
-    public DebuffLine(int gem, Effect effect, String validTargets, String profiles, int priority, boolean mainOnly, List<String> conditions) {
+    public DebuffLine(int gem, Effect effect, String validTargets, String profiles, double priority, boolean mainOnly, List<String> conditions) {
       this.gem = gem;
       this.effect = effect;
       this.validTargets = validTargets;
@@ -242,6 +242,11 @@ public class DebuffModule implements Module {
     @Override
     public void setEnabled(boolean enabled) {
       this.enabled = enabled;
+    }
+
+    @Override
+    public String toString() {
+      return String.format("DebuffLine(" + effect + "; pri=%8.4f)", priority);
     }
   }
 

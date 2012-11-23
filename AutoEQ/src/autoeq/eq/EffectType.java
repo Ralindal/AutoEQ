@@ -6,5 +6,6 @@ public enum EffectType {
   CHARM,
   DAMAGE_OVER_TIME,
   SLOW,
+  TWIN_CAST,
   UNCLASSIFIED
 }

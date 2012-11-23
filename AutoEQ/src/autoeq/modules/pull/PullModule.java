@@ -391,7 +391,7 @@ public class PullModule implements Module {
 
         if(closestMatch != null) {
 //          session.echo("PULL: Agroing " + closestMatch + " on the move, using " + pullMethod);
-          session.getMe().activeEffect(pullMethod, closestMatch);
+          session.getMe().activateEffect(pullMethod, closestMatch);
         }
       }
 
@@ -433,7 +433,7 @@ public class PullModule implements Module {
       else {
         session.echo("PULL: Using " + pullMethod);
         if(pullMethod.isReady()) {
-          session.getMe().activeEffect(pullMethod, spawn);
+          session.getMe().activateEffect(pullMethod, spawn);
         }
       }
 //      MoveUtils.moveTowards(session, node.x, node.y);

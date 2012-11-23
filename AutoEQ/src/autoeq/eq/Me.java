@@ -11,7 +11,6 @@ import java.util.regex.Pattern;
 
 import autoeq.SpellData;
 import autoeq.effects.Effect;
-import autoeq.effects.SongEffect;
 import autoeq.effects.Effect.Type;
 
 
@@ -190,7 +189,7 @@ public class Me extends Spawn {
     return false;
   }
 
-  public String activeEffect(Effect effect, Spawn target) {
+  public String activateEffect(Effect effect, Spawn target) {
     if(isBard()) {
       session.doCommand("/stopcast");
     }

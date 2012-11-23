@@ -31,7 +31,7 @@ public class ActivateEffectCommand implements Command {
     session.log(moduleName + ": We can cast " + effect + " on " + Arrays.toString(targets));
 
     //session.doCommand("/bc " + moduleName + ": " + effect.getType().getVerb() + " '" + effect + "' on [ " + targets[0].getName() + " ]");
-    String castResult = session.getMe().activeEffect(effect, targets[0]);
+    String castResult = session.getMe().activateEffect(effect, targets[0]);
 
     if(castResult.equals("CAST_OUTDOORS")) {
       session.doCommand("/echo BUFF: Disabling '" + effect + "' because not outdoors");
@@ -158,11 +158,16 @@ public class ActivateEffectCommand implements Command {
       return false;
     }
 
+    return checkRangeAndTargetType(effect, targets);
+  }
+
+  public static boolean checkRangeAndTargetType(Effect effect, Spawn... targets) {
     Spell spell = effect.getSpell();
     double rangeMultiplier = spell.getTargetType() == TargetType.SINGLE || spell.getTargetType() == TargetType.PBAE ? 1.0 : 0.8;
+    double spellRange = spell.getTargetType() == TargetType.GROUP ? spell.getAERange() : spell.getRange();
 
     for(Spawn target : targets) {
-      if(spell.getRange() != 0.0 && target.getDistance() > spell.getRange() * rangeMultiplier) {
+      if(spellRange != 0.0 && target.getDistance() > spellRange * rangeMultiplier) {
         return false;
       }
       if(spell.isDetrimental() && !target.isEnemy() && spell.getTargetType() != TargetType.PBAE) {

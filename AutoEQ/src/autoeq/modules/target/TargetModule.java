@@ -8,6 +8,7 @@ import java.util.regex.Pattern;
 import autoeq.ExpressionEvaluator;
 import autoeq.TargetPattern;
 import autoeq.ThreadScoped;
+import autoeq.commandline.CommandLineParser;
 import autoeq.eq.Command;
 import autoeq.eq.Condition;
 import autoeq.eq.EverquestSession;
@@ -29,7 +30,6 @@ public class TargetModule implements Module {
   private final List<String> conditions;
   private final List<String> assistConditions;
 
-  private boolean active;
   private String targetSelection;
   private int range = 50;
   private boolean attacking;
@@ -48,42 +48,28 @@ public class TargetModule implements Module {
       section = session.getIni().getSection("Target");
     }
 
-    active = section.getDefault("Active", "true").toLowerCase().equals("true");
+    if(section.get("Active") != null) {
+      System.err.println("WARN: Target/Active is deprecated, set Mode to 'off' if you donot want targetting");
+    }
     targetSelection = section.getDefault("Mode", "assist");
     validTargets = section.getDefault("ValidTargets", "war pal shd mnk rog ber rng bst brd clr shm dru enc mag nec wiz pet");
     conditions = section.getAll("Condition");
     assistConditions = section.getAll("AssistCondition");
     names = section.getDefault("Names", "").split(",");
 
-    session.addUserCommand("target", Pattern.compile("(off|on|assist|oldest|nearest|highest_level|smart|status|range ([0-9]+))"), "(off|assist|oldest|nearest|highest_level|smart|status|range <range>)", new UserCommand() {
+    session.addUserCommand("target", Pattern.compile(".+"), CommandLineParser.getHelpString(TargetConf.class), new UserCommand() {
       @Override
       public void onCommand(Matcher matcher) {
-        if(matcher.group(1).equals("off")) {
-          active = false;
-        }
-        else if(matcher.group(1).equals("on")) {
-          active = true;
-        }
-        else if(matcher.group(1).equals("assist")) {
-          targetSelection = "assist";
-        }
-        else if(matcher.group(1).equals("oldest")) {
-          targetSelection = "oldest";
-        }
-        else if(matcher.group(1).equals("nearest")) {
-          targetSelection = "nearest";
-        }
-        else if(matcher.group(1).equals("highest_level")) {
-          targetSelection = "highest_level";
-        }
-        else if(matcher.group(1).equals("smart")) {
-          targetSelection = "smart";
-        }
-        else if(matcher.group(1).startsWith("range ")) {
-          range = Integer.parseInt(matcher.group(2));
+        TargetConf conf = new TargetConf();
+        CommandLineParser.parse(conf, matcher.group(0));
+
+        if(conf.getMode() != null) {
+          targetSelection = conf.getMode().name().toLowerCase();
         }
 
-        session.echo("==> Target acquirement is " + (active ? "on" : "off") + ".  Mode is: " + targetSelection + ".  Range is " + range + ".");
+        range = conf.getRange();
+
+        session.echo("==> Target acquirement is " + (targetSelection.equals("off") ? "off" : "on") + ".  Mode is: " + targetSelection + ".  Range is " + range + ".");
       }
     });
   }
@@ -117,7 +103,7 @@ public class TargetModule implements Module {
   public Spawn getMainAssistTarget() {
     Spawn bestTarget = currentTarget;
 
-    if(active) {
+    if(!targetSelection.equals("off")) {
       Me me = session.getMe();
       boolean campSet = false;
       float x = me.getX();
