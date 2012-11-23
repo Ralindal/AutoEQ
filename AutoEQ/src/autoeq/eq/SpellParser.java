@@ -3,9 +3,12 @@ package autoeq.eq;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
+import autoeq.SpellData;
 import autoeq.effects.Effect;
 import autoeq.expr.Parser;
 import autoeq.expr.SyntaxException;
@@ -52,7 +55,6 @@ public class SpellParser {
           ExpressionRoot root = new ExpressionRoot(session, null, null, null, effectSet.getSingleOrGroup());
 
           if((Boolean)Parser.parse(root, filter)) {
-            System.err.println(">>> Filtered: " + effectSet);
             iterator.remove();
           }
         }
@@ -65,7 +67,6 @@ public class SpellParser {
 
     if(order != null) {
       System.err.println(">>> Sorting with: " + order);
-      System.err.println(">>> Sorting: " + effectSets);
       try {
         Collections.sort(effectSets, new Comparator<EffectSet>() {
           @Override
@@ -91,6 +92,31 @@ public class SpellParser {
       }
       System.err.println(">>> Result: " + effectSets);
     }
+
+    /*
+     * Remove spells with same timerId's that have a recast time greater than their duration
+     */
+
+    Set<Integer> seenTimerIds = new HashSet<>();
+
+    for(Iterator<EffectSet> iterator = effectSets.iterator(); iterator.hasNext();) {
+      EffectSet effectSet = iterator.next();
+
+      Spell spell = effectSet.getSingleOrGroup().getSpell();
+      SpellData sd = spell.getRawSpellData();
+      int timerId = sd.getTimerId();
+
+      if(timerId > 0 && sd.getRecastMillis() > spell.getDuration() * 1000 && seenTimerIds.contains(timerId)) {
+        System.err.println(">>> Filtered by timerId: " + effectSet);
+        iterator.remove();
+      }
+
+      seenTimerIds.add(timerId);
+    }
+
+    /*
+     * Remove spells that are skipped
+     */
 
     for(int i = 0; i < Integer.parseInt(section.getDefault("Skip", "0")); i++) {
       if(effectSets.size() > 0) {

@@ -29,6 +29,7 @@ public class Spell {
   private final boolean isCharm;
   private final boolean isMez;
   private final boolean isHealOverTime;
+  private final boolean isTwinCast;
 
 //  private final Map<Integer, Boolean> willStackCache = new HashMap<Integer, Boolean>();
 //
@@ -57,10 +58,12 @@ public class Spell {
       this.mana = sd.getMana();
       this.castTime = sd.getCastTime();
 
-      this.level = Integer.parseInt(session.translate("${Spell[" + id + "].Level}"));
-      this.duration = Integer.parseInt(session.translate("${Spell[" + id + "].Duration.TotalSeconds}"));
-      this.targetType = session.translate("${Spell[" + id + "].TargetType}").toLowerCase();
-      this.spellType = session.translate("${Spell[" + id + "].SpellType}").toLowerCase();
+      String[] infos = session.translate("${Spell[" + id + "].Level};${Spell[" + id + "].Duration.TotalSeconds};${Spell[" + id + "].TargetType};${Spell[" + id + "].SpellType}").split(";");
+
+      this.level = Integer.parseInt(infos[0]);
+      this.duration = Integer.parseInt(infos[1]);
+      this.targetType = infos[2].toLowerCase();
+      this.spellType = infos[3].toLowerCase();
     }
     catch(NullPointerException e) {
       throw new RuntimeException("Unable to find spell with ID " + id, e);
@@ -68,6 +71,7 @@ public class Spell {
 
     this.isMez = sd.hasAttribute(SpellData.ATTRIB_MESMERIZE);
     this.isCharm = sd.hasAttribute(SpellData.ATTRIB_CHARM);
+    this.isTwinCast = sd.hasAttribute(SpellData.ATTRIB_TWIN_CAST) && sd.getBase(sd.getAttributeIndex(SpellData.ATTRIB_TWIN_CAST)) >= 100;
     this.maxTargetLevel = this.isMez   ? sd.getMax(sd.getAttributeIndex(SpellData.ATTRIB_MESMERIZE)) :
                           this.isCharm ? sd.getMax(sd.getAttributeIndex(SpellData.ATTRIB_CHARM)) :
                                          255;
@@ -88,6 +92,9 @@ public class Spell {
     }
     if(isSlow) {
       return EffectType.SLOW;
+    }
+    if(isTwinCast) {
+      return EffectType.TWIN_CAST;
     }
     if(getDamageOverTime() > 0) {
       return EffectType.DAMAGE_OVER_TIME;
@@ -113,6 +120,18 @@ public class Spell {
 
   public int getDamageOverTime() {
     if(getDuration() > 0 && isDetrimental()) {
+      int index = sd.getAttributeIndex(SpellData.ATTRIB_DAMAGE);
+
+      if(index >= 0) {
+        return (int)-sd.getBase(index);
+      }
+    }
+
+    return 0;
+  }
+
+  public int getDamage() {
+    if(getDuration() == 0 && isDetrimental()) {
       int index = sd.getAttributeIndex(SpellData.ATTRIB_DAMAGE);
 
       if(index >= 0) {
