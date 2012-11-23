@@ -13,6 +13,8 @@ public class SpellData {
   public static final int ATTRIB_MOUNT = 113;
   public static final int ATTRIB_SHRINK = 298;
   public static final int ATTRIB_AUTO_CAST = 374;
+  public static final int ATTRIB_TWIN_CAST = 399;
+  public static final int ATTRIB_MANA_HP_DRAIN = 401;  // base2 determines hp drain
 
   private final int id;
   private final String name;
@@ -23,6 +25,7 @@ public class SpellData {
   private final int aeRange;
   private final int mana;
   private final int castTime;
+  private final int recastTime;
 
   private final float[] base = new float[12];
   private final float[] base2 = new float[12];
@@ -38,7 +41,10 @@ public class SpellData {
   private final int druLevel;
   private final int mnkLevel;
   private final int brdLevel;
+
   private final int shortBuff;
+  private final int autoCastId;
+  private final int timerId;      // shared lockout timer if > 0
 
   private final ResistType resistType;
 
@@ -51,7 +57,7 @@ public class SpellData {
     this.range = toInt(fields[9]);
     this.aeRange = toInt(fields[10]);
     this.castTime = toInt(fields[13]);
-//    this.reCastTime = Integer.parseInt(fields[15]);
+    this.recastTime = toInt(fields[15]);
 //    this.durationType = Integer.parseInt(fields[16]);
 //    this.durationValue = Integer.parseInt(fields[17]);
     this.mana = toInt(fields[19]);
@@ -88,7 +94,9 @@ public class SpellData {
     mnkLevel = toInt(fields[110]);
     brdLevel = toInt(fields[111]);
 
+    autoCastId = toInt(fields[150]);
     shortBuff = toInt(fields[154]);
+    timerId = toInt(fields[167]);
   }
 
   private static float toFloat(String s) {
@@ -138,6 +146,18 @@ public class SpellData {
     }
 
     return false;
+  }
+
+  public int getAutoCastId() {
+    return autoCastId;
+  }
+
+  public int getTimerId() {
+    return timerId;
+  }
+
+  public int getRecastMillis() {
+    return recastTime;
   }
 
   public boolean stacksWith(SpellData sd) {
