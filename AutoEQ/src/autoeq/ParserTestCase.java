@@ -23,6 +23,13 @@ public class ParserTestCase {
   }
 
   @Test
+  public void shouldSupportFloatingPoint() throws SyntaxException {
+    assertTrue((Boolean)Parser.parse(root, "10 * 0.5 > 4"));
+    assertFalse((Boolean)Parser.parse(root, "10 * 0.5 < 4"));
+    assertTrue((Boolean)Parser.parse(root, "0.2 * 9.9 > 1.9"));
+  }
+
+  @Test
   public void testParse() throws SyntaxException {
     assertTrue((Boolean)Parser.parse(root, "0 == 1 || 1 == 1"));
     assertTrue((Boolean)Parser.parse(root, "target.mana < 95 || target.mana > 99"));

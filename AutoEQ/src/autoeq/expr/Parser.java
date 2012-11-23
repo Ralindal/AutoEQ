@@ -211,7 +211,7 @@ public class Parser {
     }
   }
 
-  public static Object parseSingleResult(Object root, List<Token> tokens, int level, boolean parseOnly) throws SyntaxException {
+  private static Object parseSingleResult(Object root, List<Token> tokens, int level, boolean parseOnly) throws SyntaxException {
     List<Object> results = parse(root, tokens, level, parseOnly);
 
     return results.get(results.size() - 1);
@@ -219,6 +219,7 @@ public class Parser {
 
   private static Pattern IDENTIFIER = Pattern.compile("[_A-Za-z][_A-Za-z0-9]*");
   private static Pattern INTEGER = Pattern.compile("-?[0-9]+");
+  private static Pattern FLOAT = Pattern.compile("-?[0-9]+(\\.[0-9]+)?");
 
   private static List<Object> parse(Object root, List<Token> tokens, int level, boolean parseOnly) throws SyntaxException {
     if(tokens.size() == 0) {
@@ -303,6 +304,9 @@ public class Parser {
         }
         else if(token.matches(INTEGER)) {
           result = Integer.parseInt(token.getText());
+        }
+        else if(token.matches(FLOAT)) {
+          result = Double.parseDouble(token.getText());
         }
         else if(token.getText().equals("(")) {
           tokens.add(0, token);
