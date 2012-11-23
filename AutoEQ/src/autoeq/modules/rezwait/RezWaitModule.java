@@ -79,7 +79,7 @@ public class RezWaitModule implements Module {
        * Auto accept rez
        */
 
-      if(session.evaluate("${Window[ConfirmationDialogBox].Child[CD_TextOutput].Text.Find[percent) upon you.]}")) {
+      if(session.evaluate("${Window[ConfirmationDialogBox].Open}") && session.evaluate("${Window[ConfirmationDialogBox].Child[CD_TextOutput].Text.Find[percent) upon you.]}")) {
         session.delay(1000);
         session.doCommand("/nomodkey /notify ConfirmationDialogBox Yes_Button leftmouseup");
         session.delay(1000);
