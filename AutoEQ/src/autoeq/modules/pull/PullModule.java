@@ -4,12 +4,13 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
 
 import autoeq.ExpressionEvaluator;
 import autoeq.TargetPattern;
@@ -173,6 +174,10 @@ public class PullModule implements Module {
   public List<Command> pulse() {
     Me me = session.getMe();
 
+    if(active && paths.size() > 0 && me.isAlive()) {
+      checkPaths();
+    }
+
     if(active && paths.size() > 0 && me.isAlive() && !me.isMoving() && !me.isCasting() && !me.inCombat() && session.tryLockMovement()) {
       try {
         // Possibly ready to pull
@@ -263,23 +268,69 @@ public class PullModule implements Module {
     }
   }
 
-  private Pair<List<Node>, List<Spawn>> selectPath() {
-    if(order.equals("path")) {
-      nextPath:
-      for(List<Node> path : paths) {
-        for(Node node : path) {
-          List<Spawn> nearbySpawns = getSpawns(node);
+  private final Map<List<Node>, Long> suspendedPaths = new HashMap<>();
 
-          if(nearbySpawns.size() > 0) {
-            if(!pullNameds) {
-              for(Spawn spawn : nearbySpawns) {
-                if(spawn.isNamedMob()) {
-                  continue nextPath;
-                }
-              }
+  private void checkPaths() {
+    int pathNo = 0;
+
+    for(List<Node> path : paths) {
+      for(Node node : path) {
+        List<Spawn> nearbySpawns = getHostilePCs(node);
+        Long suspendTimeOut = suspendedPaths.get(path);
+
+        if(nearbySpawns.size() > 0 && (suspendTimeOut == null || suspendTimeOut < System.currentTimeMillis() + 2 * 60 * 1000)) {
+          String nearbySpawnNames = "";
+
+          for(Spawn nearbySpawn : nearbySpawns) {
+            if(!nearbySpawnNames.isEmpty()) {
+              nearbySpawnNames += ", ";
             }
 
-            return new Pair<>(path, nearbySpawns);
+            nearbySpawnNames += nearbySpawn.getName();
+          }
+
+          session.echo("PULL: Suspended path " + pathNo + " for 180s because of: " + nearbySpawnNames);
+          suspendedPaths.put(path, System.currentTimeMillis() + 3 * 60 * 1000);
+        }
+      }
+
+      pathNo++;
+    }
+  }
+
+  private boolean isPathSuspended(List<Node> path) {
+    Long suspendTimeOut = suspendedPaths.get(path);
+
+    return suspendTimeOut != null && suspendTimeOut > System.currentTimeMillis();
+  }
+
+  private Pair<List<Node>, List<Spawn>> selectPath() {
+    if(order.equals("path")) {
+      for(List<Node> path : paths) {
+        if(!isPathSuspended(path)) {
+          if(!pullNameds) {
+            List<Node> shortenedPath = new ArrayList<>();
+
+            outer:
+            for(Node node : path) {
+              for(Spawn spawn : getSpawns(node, 50)) {
+                if(spawn.isNamedMob()) {
+                  break outer;
+                }
+              }
+
+              shortenedPath.add(node);
+            }
+
+            path = shortenedPath;
+          }
+
+          for(Node node : path) {
+            List<Spawn> nearbySpawns = getSpawns(node);
+
+            if(nearbySpawns.size() > 0) {
+              return new Pair<>(path, nearbySpawns);
+            }
           }
         }
       }
@@ -292,20 +343,22 @@ public class PullModule implements Module {
       int bestPathNo = 0;
 
       for(List<Node> path : paths) {
-        Set<Spawn> spawns = new HashSet<>();
+        if(!isPathSuspended(path)) {
+          Set<Spawn> spawns = new HashSet<>();
 
-        for(Node node : path) {
-          spawns.addAll(getSpawns(node));
+          for(Node node : path) {
+            spawns.addAll(getSpawns(node));
+          }
+
+          if(spawns.size() > bestDensity) {
+            bestPath = path;
+            bestSpawns = spawns;
+            bestDensity = spawns.size();
+            bestPathNo = pathNo;
+          }
+
+          pathNo++;
         }
-
-        if(spawns.size() > bestDensity) {
-          bestPath = path;
-          bestSpawns = spawns;
-          bestDensity = spawns.size();
-          bestPathNo = pathNo;
-        }
-
-        pathNo++;
       }
 
       if(bestPath != null) {
@@ -449,14 +502,14 @@ public class PullModule implements Module {
     return false;
   }
 
-  public List<Spawn> getSpawns(Node node) {
+  public List<Spawn> getHostilePCs(Node node) {
     List<Spawn> spawns = new ArrayList<>();
     Me me = session.getMe();
 
     for(Spawn spawn : session.getSpawns()) {
-      if(spawn.getDistance(node.x, node.y) < node.size) {
-        if((node.z == null && Math.abs(spawn.getZ() - me.getZ()) < zrange) || (node.z != null && Math.abs(spawn.getZ() - node.z) < 10)) {
-          if(isValidTarget(spawn) && !session.getIgnoreList().contains(spawn.getName())) {
+      if(spawn.getDistance(node.x, node.y) < node.size + node.size / 2) {
+        if((node.z == null && Math.abs(spawn.getZ() - me.getZ()) < zrange) || (node.z != null && Math.abs(spawn.getZ() - node.z) < 20)) {
+          if(spawn.getType() == SpawnType.PC && !spawn.isBot() && !spawn.isGroupMember()) {
             spawns.add(spawn);
           }
         }
@@ -464,6 +517,27 @@ public class PullModule implements Module {
     }
 
     return spawns;
+  }
+
+  public List<Spawn> getSpawns(Node node, int extraRadius) {
+    List<Spawn> spawns = new ArrayList<>();
+    Me me = session.getMe();
+
+    for(Spawn spawn : session.getSpawns()) {
+      if(spawn.getDistance(node.x, node.y) < node.size + extraRadius) {
+        if((node.z == null && Math.abs(spawn.getZ() - me.getZ()) < zrange) || (node.z != null && Math.abs(spawn.getZ() - node.z) < 20)) {
+          if(isValidTarget(spawn) && !spawn.isIgnored()) {
+            spawns.add(spawn);
+          }
+        }
+      }
+    }
+
+    return spawns;
+  }
+
+  public List<Spawn> getSpawns(Node node) {
+    return getSpawns(node, 0);
   }
 
   private boolean isValidTarget(Spawn spawn) {
