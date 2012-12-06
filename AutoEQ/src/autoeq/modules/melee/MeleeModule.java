@@ -80,6 +80,10 @@ public class MeleeModule implements Module {
       public void onCommand(Matcher matcher) {
         if(matcher.group(1).equals("off")) {
           active = false;
+          if(attacking) {
+            session.unlockMovement();
+            attacking = false;
+          }
         }
         else if(matcher.group(1).equals("on")) {
           active = true;
