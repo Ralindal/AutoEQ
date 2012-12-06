@@ -44,6 +44,8 @@ public class DebuffModule implements Module {
   public DebuffModule(EverquestSession session, TargetModule targetModule) {
     this.session = session;
     this.targetModule = targetModule;
+
+    activeProfiles.add("--no active profile--");
   }
 
   @Override
@@ -123,7 +125,7 @@ public class DebuffModule implements Module {
 
             for(Spawn spawn : session.getSpawns()) {
               if((spawn.getType() == SpawnType.NPC || !effect.getSpell().isDetrimental()) && (effect.getSpell().getRange() == 0.0 || spawn.getDistance() < effect.getSpell().getRange())) {
-                if(!session.getIgnoreList().contains(spawn.getName())) {
+                if(!spawn.isIgnored()) {
     //              if(spawn.getDistance() < 75.0) {
     //                System.out.println(spawn + " ttl " + spawn.getTimeToLive());
     //              }
@@ -131,15 +133,11 @@ public class DebuffModule implements Module {
                   if(!spawn.getSpellEffects().contains(effect.getSpell()) && !effect.getSpell().isEquivalent(spawn.getSpellEffects())) {
                     if(debuffLine.isValidTarget(spawn, mainTarget, mainAssist, effect)) {
                       if(spawn == mainTarget) {
-                        session.echo(mainTarget + "; MyAgro = " + mainTarget.getMyAgro() + "; TankAgro = " + mainTarget.getTankAgro());
+                        session.echo("DEBUFF: Considering '" + effect.getSpell() + "' for " + spawn.getName() + ", TTL=" + spawn.getMobTimeToLive() + "; Agro=" + (spawn.getMyAgro() - spawn.getTankAgro()));
                       }
 
 //                      session.echo(spawn + "; TTL = " + spawn.getTimeToLive() + "; MyAgro = " + spawn.getMyAgro() + "; TankAgro = " + spawn.getTankAgro());
                       if(ActivateEffectCommand.checkEffect(effect, spawn)) {
-                        if(effect.getSpell().getName().contains("Zeal")) {
-                          System.err.println(effect.getSpell().getName() + "!!!! " + effect.getSpell().getRange() + "; " + effect.getSpell().isDetrimental());
-                        }
-
                         List<Spawn> targets = targetLists.get(debuffLine);
 
                         if(targets == null) {
