@@ -10,12 +10,12 @@ public class ItemEffect implements Effect {
   private final int agro;
 
   private boolean ready;
-  
+
   public ItemEffect(EverquestSession session, String name, Spell spell, int agro) {
     this.name = name;
     this.spell = spell;
     this.agro = agro;
-    
+
     session.registerExpression("${Cast.Ready[" + name + "|item]}", new ExpressionListener() {
       @Override
       public void stateUpdated(String result) {
@@ -29,16 +29,20 @@ public class ItemEffect implements Effect {
     return spell;
   }
 
+  public String getName() {
+    return name;
+  }
+
   @Override
   public Type getType() {
     return Type.ITEM;
   }
-  
+
   @Override
   public int getAgro() {
     return agro;
   }
-  
+
   @Override
   public String getCastingLine() {
     return "/nomod /casting \"" + name + "\" item";
@@ -48,7 +52,7 @@ public class ItemEffect implements Effect {
   public boolean isReady() {
     return ready;
   }
-  
+
   @Override
   public String toString() {
     return name;

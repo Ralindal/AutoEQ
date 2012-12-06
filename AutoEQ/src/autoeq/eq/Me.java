@@ -2,20 +2,104 @@ package autoeq.eq;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import autoeq.SpellData;
+import autoeq.effects.AlternateAbilityEffect;
 import autoeq.effects.Effect;
 import autoeq.effects.Effect.Type;
+import autoeq.effects.ItemEffect;
 
 
 public class Me extends Spawn {
   private static final int SPELL_GEMS = 12;
+  private static final Map<String, CastResult> EXACT_MESSAGE_TO_CAST_RESULT = new HashMap<>();
+  private static final Map<String, CastResult> MESSAGE_TO_CAST_RESULT = new HashMap<>();
+
+  public enum CastResult {
+    SUCCESS("CAST_SUCCESS", 0),
+    RECOVERING("CAST_RECOVER", 1),
+    INTERRUPTED("CAST_INTERRUPTED", 2),
+    CANNOT_SEE_TARGET("CAST_CANNOTSEE", 2),
+    DISTRACTED("CAST_DISTRACTED", 3),
+    FIZZLED("CAST_FIZZLE", 5),
+    IMMUNE("CAST_IMMUNE", 5),
+    MISSING_COMPONENTS("CAST_COMPONENTS", 5),
+    MISSING_TARGET("CAST_NOTARGET", 5),
+    NOT_READY("CAST_NOTREADY", 5),
+    INSUFFICIENT_MANA("CAST_OUTOFMANA", 5),
+    OUT_OF_RANGE("CAST_OUTOFRANGE", 5),
+    RESISTED("CAST_RESIST", 5),
+    DID_NOT_TAKE_HOLD("CAST_TAKEHOLD", 5),
+    SITTING("CAST_STANDING", 5),
+    STUNNED("CAST_STUNNED", 5);
+
+    private final int rootCauseLevel;
+    private final String code;
+
+    CastResult(String code, int rootCauseLevel) {
+      this.code = code;
+      this.rootCauseLevel = rootCauseLevel;
+    }
+
+    public String getCode() {
+      return code;
+    }
+
+    public int getRootCauseLevel() {
+      return rootCauseLevel;
+    }
+  }
+
+  static {
+    EXACT_MESSAGE_TO_CAST_RESULT.put("You cannot see your target.", CastResult.CANNOT_SEE_TARGET);
+    EXACT_MESSAGE_TO_CAST_RESULT.put("You haven't recovered yet...", CastResult.RECOVERING);
+    EXACT_MESSAGE_TO_CAST_RESULT.put("You are missing some required components.", CastResult.MISSING_COMPONENTS);
+    EXACT_MESSAGE_TO_CAST_RESULT.put("Your spell is interrupted.", CastResult.INTERRUPTED);
+    EXACT_MESSAGE_TO_CAST_RESULT.put("You can't cast spells while invulnerable!", CastResult.DISTRACTED);
+    EXACT_MESSAGE_TO_CAST_RESULT.put("You must first select a target for this spell!", CastResult.MISSING_TARGET);
+    EXACT_MESSAGE_TO_CAST_RESULT.put("You must be standing to cast a spell.", CastResult.SITTING);
+    EXACT_MESSAGE_TO_CAST_RESULT.put("Your spell fizzles!", CastResult.FIZZLED);
+
+    MESSAGE_TO_CAST_RESULT.put("You *CANNOT* cast spells, you have been silenced", CastResult.DISTRACTED);
+    MESSAGE_TO_CAST_RESULT.put("Your target cannot be mesmerized", CastResult.IMMUNE);
+    MESSAGE_TO_CAST_RESULT.put("This spell only works on ", CastResult.MISSING_TARGET);
+    MESSAGE_TO_CAST_RESULT.put("You must first target a group member", CastResult.MISSING_TARGET);
+    MESSAGE_TO_CAST_RESULT.put("Spell recast time not yet met", CastResult.NOT_READY);
+    MESSAGE_TO_CAST_RESULT.put("Insufficient Mana to cast this spell", CastResult.INSUFFICIENT_MANA);
+    MESSAGE_TO_CAST_RESULT.put("Your target is out of range, get closer", CastResult.OUT_OF_RANGE);
+    MESSAGE_TO_CAST_RESULT.put("Your target resisted the ", CastResult.RESISTED);
+    MESSAGE_TO_CAST_RESULT.put("You can't cast spells while stunned", CastResult.STUNNED);
+    MESSAGE_TO_CAST_RESULT.put("Your spell did not take hold", CastResult.DID_NOT_TAKE_HOLD);
+    MESSAGE_TO_CAST_RESULT.put("Your spell would not have taken hold", CastResult.DID_NOT_TAKE_HOLD);
+    MESSAGE_TO_CAST_RESULT.put("Your spell is too powerfull for your intended target", CastResult.DID_NOT_TAKE_HOLD);
+    MESSAGE_TO_CAST_RESULT.put("You need to be in a more open area to summon a mount", CastResult.DID_NOT_TAKE_HOLD);
+    MESSAGE_TO_CAST_RESULT.put("You can only summon a mount on dry land", CastResult.DID_NOT_TAKE_HOLD);
+
+//    aCastEvent(LIST289, CAST_COLLAPSE    ,"Your gate is too unstable, and collapses#*#");
+//    aCastEvent(LIST289, CAST_COMPONENTS  ,"You need to play a#*#instrument for this song#*#");
+//    aCastEvent(LIST289, CAST_DISTRACTED  ,"You are too distracted to cast a spell now#*#");
+//    aCastEvent(LIST289, CAST_IMMUNE      ,"Your target has no mana to affect#*#");
+//    aCastEvent(LIST013, CAST_IMMUNE      ,"Your target is immune to changes in its attack speed#*#");
+//    aCastEvent(LIST013, CAST_IMMUNE      ,"Your target is immune to changes in its run speed#*#");
+//    aCastEvent(UNKNOWN, CAST_IMMUNE      ,"Your target looks unaffected#*#");
+//    aCastEvent(UNKNOWN, CAST_INTERRUPTED ,"Your casting has been interrupted#*#");
+//    aCastEvent(LIST289, CAST_FIZZLE      ,"You miss a note, bringing your song to a close#*#");
+//    aCastEvent(LIST289, CAST_OUTDOORS    ,"This spell does not work here#*#");
+//    aCastEvent(LIST289, CAST_OUTDOORS    ,"You can only cast this spell in the outdoors#*#");
+//    aCastEvent(LIST289, CAST_OUTDOORS    ,"You can not summon a mount here#*#");
+//    aCastEvent(LIST289, CAST_OUTDOORS    ,"You must have both the Horse Models and your current Luclin Character Model enabled to summon a mount#*#");
+//
+//    aCastEvent(LIST289, CAST_RECOVER     ,"Spell recovery time not yet met#*#");  // Does that still happen?
+//    aCastEvent(LIST289, CAST_SUCCESS     ,"You are already on a mount#*#");
+  }
 
 //  private final SpellProperty[] gems;
   private final Spell[] gems = new Spell[SPELL_GEMS];
@@ -95,7 +179,38 @@ public class Me extends Spawn {
         dmgHistory.add(Integer.parseInt(matcher.group(1)));
       }
     });
+
+    session.addChatListener(new ChatListener() {
+      private final Pattern PATTERN = Pattern.compile(".+");
+
+      @Override
+      public Pattern getFilter() {
+        return PATTERN;
+      }
+
+      @Override
+      public void match(Matcher matcher) {
+        String line = matcher.group(0);
+        CastResult castResult = EXACT_MESSAGE_TO_CAST_RESULT.get(line);
+
+        if(castResult == null) {
+          for(Map.Entry<String, CastResult> entry : MESSAGE_TO_CAST_RESULT.entrySet()) {
+            if(line.startsWith(entry.getKey())) {
+              castResult = entry.getValue();
+            }
+          }
+        }
+
+        if(castResult != null) {
+          if(lastSeenCastResult == null || lastSeenCastResult.getRootCauseLevel() < castResult.getRootCauseLevel()) {
+            lastSeenCastResult = castResult;
+          }
+        }
+      }
+    });
   }
+
+  private volatile CastResult lastSeenCastResult = null;
 
   public String getMeleeStatus() {
     return meleeStatus;
@@ -139,33 +254,41 @@ public class Me extends Spawn {
   public void memorize(int spellId, int spellSlot) {
     session.doCommand("/autoinventory");
 
-    int slot = spellSlot != 0 ? spellSlot : getPreferredGem();
+    final int slot = spellSlot != 0 ? spellSlot : getPreferredGem();
 
     if(slot != 0) {
-      session.doCommand("/memorize " + spellId + "|gem" + slot);
+      final Spell spell = session.getSpell(spellId);
+
+      session.doCommand("/memspell " + slot + " \"" + spell.getName() + "\"");
       session.delay(1000, new Condition() {
         @Override
         public boolean isValid() {
-          return session.translate("${Cast.Status}").contains("M");
+          return gems[slot - 1] == null;
         }
       });
       session.delay(5000, new Condition() {
         @Override
         public boolean isValid() {
-          return session.translate("${Cast.Status}").equals("I");
+          return spell.equals(gems[slot - 1]);
         }
       });
 
-      gems[slot - 1] = null;
+//      session.doCommand("/memorize " + spellId + "|gem" + slot);
+//      session.delay(1000, new Condition() {
+//        @Override
+//        public boolean isValid() {
+//          return session.translate("${Cast.Status}").contains("M");
+//        }
+//      });
+//      session.delay(5000, new Condition() {
+//        @Override
+//        public boolean isValid() {
+//          return session.translate("${Cast.Status}").equals("I");
+//        }
+//      });
+//
+//      gems[slot - 1] = null;
     }
-  }
-
-  public boolean isAlternateAbilityReady(String name) {
-    return session.translate("${Cast.Ready[" + name + "|alt]}").equals("TRUE");
-  }
-
-  public boolean isItemReady(String name) {
-    return session.translate("${Cast.Ready[" + name + "|item]}").equals("TRUE");
   }
 
   /**
@@ -190,6 +313,76 @@ public class Me extends Spawn {
   }
 
   public String activateEffect(Effect effect, Spawn target) {
+    if(isBard()) {
+      session.doCommand("/stopcast");
+    }
+
+    if(effect.getSpell().isTargetted()) {
+      session.doCommand("/target id " + target.getId());
+      session.delay(1000, "${Target.ID} == " + target.getId());
+    }
+
+    session.doCommand("/stand");
+
+    if(effect.getType() == Type.SPELL || effect.getType() == Type.SONG) {
+      session.doCommand("/cast " + session.getMe().getGem(effect.getSpell()));
+    }
+    else if(effect.getType() == Type.ABILITY) {
+      session.doCommand("/alt activate ${Me.AltAbility[" + ((AlternateAbilityEffect)effect).getName() + "].ID}");
+    }
+    else if(effect.getType() == Type.ITEM) {
+      session.doCommand("/nomodkey /itemnotify ${FindItem[=" + ((ItemEffect)effect).getName() + "].InvSlot} rightmouseup");
+    }
+    else {
+      session.doCommand("/nomod /doability \"" + effect.getSpell().getName() + "\"");
+    }
+
+    if(effect.getType() != Type.DISCIPLINE) {
+      if(effect.getSpell().getCastTime() > 0) {
+
+        // Wait until we've started the cast
+        session.delay(500, new Condition() {
+          @Override
+          public boolean isValid() {
+            return !session.translate("${Me.Casting.ID}").equals("NULL");
+          }
+        });
+
+        lastSeenCastResult = null;
+
+        // Wait until we've ended the cast
+        session.delay(30000, new Condition() {
+          @Override
+          public boolean isValid() {
+            return session.translate("${Me.Casting.ID}").equals("NULL");
+          }
+        });
+      }
+
+      if(effect.getType() == Type.SPELL || effect.getType() == Type.SONG) {
+        updateLRUSlots(getGem(effect.getSpell()));
+      }
+
+      lastCastMillis = System.currentTimeMillis();
+
+      /*
+       * Get the result
+       */
+
+      session.delay(300, new Condition() {
+        @Override
+        public boolean isValid() {
+          return lastSeenCastResult != null;
+        }
+      });
+
+      return lastSeenCastResult == null ? "CAST_SUCCESS" : lastSeenCastResult.getCode();
+    }
+
+    return "CAST_SUCCESS";
+  }
+
+  public String activateEffect2(Effect effect, Spawn target) {
     if(isBard()) {
       session.doCommand("/stopcast");
     }
@@ -221,6 +414,8 @@ public class Me extends Spawn {
         }
       });
 
+      long castStart = System.currentTimeMillis();
+
       // Wait until we've ended the cast
       session.delay(30000, new Condition() {
         @Override
@@ -228,6 +423,8 @@ public class Me extends Spawn {
           return session.translate("${Cast.Status}").equals("I");
         }
       });
+
+      long castEnd = System.currentTimeMillis();
 
       // Short delay so MQ2CAST can update Cast.Result... sigh
       session.delay(50);
@@ -251,6 +448,7 @@ public class Me extends Spawn {
             System.err.println("Casting " + effect.getSpell() + " -> RECOVER : time taken " + (lastCastMillis - start));
           }
 
+          //session.log("CastTime for " + effect.getSpell() + ": " + (System.currentTimeMillis() - start) + " ms, " + (System.currentTimeMillis() - castStart) + "ms, " + (System.currentTimeMillis() - castEnd) + " ms, attempts: " + i);
           return results[1];
         }
 
@@ -294,20 +492,18 @@ public class Me extends Spawn {
 
 
   /**
-   * @param gem gem number, 1-10
+   * @param gem gem number, 1-12
    * @return Spell memmed in the given gem or null if none
    */
   public Spell getGem(int gem) {
-    //return gems[gem - 1].get();
     return gems[gem - 1];
   }
 
   /**
-   * @return 0 if spell not memmed, or 1-10 if memmed
+   * @return 0 if spell not memmed, or 1-12 if memmed
    */
   public int getGem(Spell spell) {
     for(int i = 0; i < SPELL_GEMS; i++) {
-      //Spell s = gems[i].get();
       Spell s = gems[i];
       if(s != null && s.equals(spell)) {
         return i + 1;
@@ -372,6 +568,30 @@ public class Me extends Spawn {
     return weight;
   }
 
+  public Set<Spawn> getNearbyGroupMembers(int maxDistanceToBeConsideredPartOfGroup) {
+    Set<Spawn> nearbyGroupMembers = new HashSet<>();
+
+    nearbyGroupMembers.add(session.getMe());
+    int previousSize = 0;
+
+    while(nearbyGroupMembers.size() != previousSize) {
+      previousSize = nearbyGroupMembers.size();
+
+      for(Spawn member : session.getGroupMembers()) {
+        if(member.isAlive() && !nearbyGroupMembers.contains(member)) {
+          for(Spawn nearbyGroupMember : nearbyGroupMembers) {
+            if(member.getDistance(nearbyGroupMember) <= maxDistanceToBeConsideredPartOfGroup) {
+              nearbyGroupMembers.add(member);
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    return nearbyGroupMembers;
+  }
+
   /**
    * Special function which returns the highest health of the 3 lowest health people in the group.
    * @return
@@ -386,6 +606,18 @@ public class Me extends Spawn {
     Collections.sort(healths);
 
     return healths.get(healths.size() < 3 ? healths.size() - 1 : 2);
+  }
+
+  public List<Integer> getAscendingGroupHitPointsPct() {
+    List<Integer> healths = new ArrayList<>(6);
+
+    for(Spawn member : session.getGroupMembers()) {
+      healths.add(member.getHitPointsPct());
+    }
+
+    Collections.sort(healths);
+
+    return healths;
   }
 
   public int getAvgGroupHitPointsPct() {
@@ -542,14 +774,13 @@ public class Me extends Spawn {
 
   private static final Pattern COMMA = Pattern.compile(",");
 
-  //                                                                                  1         2        3         4        5        6         7         8         9         10        11        12       13       14        15        16                17                 18                                  20
-  //                                                                        Name      HP        Max HP   Mana      Max Mana End      Max End   Weight    XP        AAXP      AAsaved   AA        TargId   Combat   Invis     AutoAtk   Melee.Status      Memmed Spells      Buffs                               Short Buffs
-  public static final Pattern PATTERN = Pattern.compile("#M [-0-9]+ [-0-9]+ [A-Za-z]+ ([-0-9]+) ([0-9]+) ([-0-9]+) ([0-9]+) ([0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([0-9]+) ([0-9]+) ([-0-9]+) ([-0-9]+) ((?:[A-Za-z]+ )+) M\\[([-0-9, ]+)\\] B\\[([-0-9 ]+)\\] D\\[([-0-9 ]+)\\] SB\\[([-0-9 ]+)\\] SD\\[([-0-9 ]+)\\] XT\\[([0-9 ]*)\\].*");
+  //                                                                                  1         2        3         4        5        6         7         8         9         10        11        12       13       14        15        16                17                 18                                  20                                    22                23
+  //                                                                        Name      HP        Max HP   Mana      Max Mana End      Max End   Weight    XP        AAXP      AAsaved   AA        TargId   Combat   Invis     AutoAtk   Melee.Status      Memmed Spells      Buffs                               Short Buffs                           Extended Target   Auras            TargetBuffs
+  public static final Pattern PATTERN = Pattern.compile("#M [-0-9]+ [-0-9]+ [A-Za-z]+ ([-0-9]+) ([0-9]+) ([-0-9]+) ([0-9]+) ([0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([0-9]+) ([0-9]+) ([-0-9]+) ([-0-9]+) ((?:[A-Za-z]+ )+) M\\[([-0-9, ]+)\\] B\\[([-0-9 ]+)\\] D\\[([-0-9 ]+)\\] SB\\[([-0-9 ]+)\\] SD\\[([-0-9 ]+)\\] XT\\[([0-9 ]*)\\] A\\[([^\\]]*)\\].*");
   // (?: TB\\[([0-9: ]+)\\])?  <-- sometimes result is TB]... bugged.
 
   protected void updateMe(String info) {
     dmgHistory.add(0);
-
     Matcher matcher = PATTERN.matcher(info);
 
     // Changes: Added after 15, stand state

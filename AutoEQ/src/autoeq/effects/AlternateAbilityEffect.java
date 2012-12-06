@@ -10,18 +10,22 @@ public class AlternateAbilityEffect implements Effect {
   private final int agro;
 
   private boolean ready;
-  
+
   public AlternateAbilityEffect(EverquestSession session, String name, Spell spell, int agro) {
     this.name = name;
     this.spell = spell;
     this.agro = agro;
-    
-    session.registerExpression("${Cast.Ready[" + name + "|alt]}", new ExpressionListener() {
+
+    session.registerExpression("${Me.AltAbilityReady[" + name + "]}", new ExpressionListener() {
       @Override
       public void stateUpdated(String result) {
         ready = result.equals("TRUE");
       }
     });
+  }
+
+  public String getName() {
+    return name;
   }
 
   @Override
@@ -33,12 +37,12 @@ public class AlternateAbilityEffect implements Effect {
   public Type getType() {
     return Type.ABILITY;
   }
-  
+
   @Override
   public int getAgro() {
     return agro;
   }
-  
+
   @Override
   public String getCastingLine() {
     return "/casting \"" + name + "\" alt";
@@ -48,7 +52,7 @@ public class AlternateAbilityEffect implements Effect {
   public boolean isReady() {
     return ready;
   }
-  
+
   @Override
   public String toString() {
     return name;
