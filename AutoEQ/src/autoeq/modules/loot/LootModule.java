@@ -7,10 +7,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import autoeq.ThreadScoped;
+import autoeq.commandline.CommandLineParser;
 import autoeq.eq.Command;
 import autoeq.eq.EverquestSession;
 import autoeq.eq.Me;
@@ -18,6 +20,7 @@ import autoeq.eq.Module;
 import autoeq.eq.Spawn;
 import autoeq.eq.SpawnType;
 import autoeq.eq.UserCommand;
+import autoeq.modules.loot.LootConf.Mode;
 import autoeq.modules.pull.MoveUtils;
 
 import com.google.inject.Inject;
@@ -32,57 +35,77 @@ public class LootModule implements Module {
   private final Set<Spawn> looted = new HashSet<>();
   private final Map<Spawn, Long> delayedCorpses = new HashMap<>();
 
+  private LootConf conf = new LootConf();
+
   private long lootDelayUntil;
-  private String lootPattern;
-  private String alsoLootPattern;
   private boolean lootCorpses;
-  private int lootDelay;
+  private final Map<Integer, TreeSet<Integer>> slotToHPMap = new HashMap<>();
 
   @Inject
   public LootModule(final EverquestSession session) throws IOException {
     this.session = session;
     this.lootManager = new IniLootManager(session.getGlobalIni().getValue("Global", "Path"));
 
-    // Section section = session.getIni().getSection("Loot");
-
-    session.addUserCommand("loot", Pattern.compile("(on|off|also (.+)|only (.+)|delay ([0-9]+)|status)"), "(on|off|also <pattern>|only <pattern>|delay <seconds>|status)", new UserCommand() {
+    session.addUserCommand("loot", Pattern.compile(".+"), CommandLineParser.getHelpString(LootConf.class), new UserCommand() {
       @Override
       public void onCommand(Matcher matcher) {
-        if(matcher.group(1).equals("on")) {
-          lootCorpses = true;
-          lootPattern = null;
-          alsoLootPattern = null;
-        }
-        else if(matcher.group(1).equals("off")) {
-          lootCorpses = false;
-          lootPattern = null;
-          alsoLootPattern = null;
-        }
-        else if(matcher.group(1).startsWith("also ")) {
-          lootCorpses = true;
-          lootPattern = null;
-          alsoLootPattern = matcher.group(2);
-        }
-        else if(matcher.group(1).startsWith("only ")) {
-          lootCorpses = true;
-          lootPattern = matcher.group(3);
-          alsoLootPattern = null;
-        }
-        else if(matcher.group(1).startsWith("delay ")) {
-          lootDelay = Integer.parseInt(matcher.group(4));
-        }
+        LootConf newConf = new LootConf(conf);
 
-        if(lootPattern != null) {
-          session.doCommand("/echo ==> Loot is on, only looting " + lootPattern + "; delay is " + lootDelay + " seconds.");
-        }
-        else if(alsoLootPattern != null) {
-          session.doCommand("/echo ==> Loot is on, also looting " + alsoLootPattern + "; delay is " + lootDelay + " seconds.");
-        }
-        else {
-          session.doCommand("/echo ==> Loot is " + (lootCorpses ? "on" : "off") + "; delay is " + lootDelay + " seconds.");
-        }
+        CommandLineParser.parse(newConf, matcher.group(0));
+
+        conf = newConf;
+
+        lootCorpses = !conf.getPattern().equals("off") || conf.getNormal() == Mode.ON || conf.getUpgrades() == Mode.ON;
+
+        session.echo(
+          String.format("==> Looting is %s.%s%s Delay is %ds",
+            lootCorpses ? "on" : "off",
+            conf.getPattern().equals("off") ? "" : " Specifically looting " + conf.getPattern() + ".",
+            conf.getUpgrades() == Mode.OFF ? "" : " Looting upgrades.",
+            conf.getDelay()
+          )
+        );
       }
     });
+
+    for(int i = 0; i <= 32; i++) {
+      addItem(session.translate("${Me.Inventory[" + i + "].WornSlot[1]},${Me.Inventory[" + i + "].HP}"));
+    }
+
+    for(int i = 23; i <= 32; i++) {
+      for(int slotStart = 0; slotStart < 32; slotStart += 8) {
+        String translateString = "";
+
+        for(int slot = slotStart; slot < slotStart + 8; slot++) {
+          if(!translateString.isEmpty()) {
+            translateString += ";";
+          }
+          translateString += "${Me.Inventory[" + i + "].Item[" + slot + "].WornSlot[1]},${Me.Inventory[" + i + "].Item[" + slot + "].HP}";
+        }
+
+        for(String itemInfo : session.translate(translateString).split(";")) {
+          addItem(itemInfo);
+        }
+      }
+    }
+  }
+
+  private void addItem(String itemInfo) {
+    String[] results = itemInfo.split(",");
+
+    if(!results[0].equals("NULL") && !results[1].equals("NULL")) {
+      int slot = Integer.parseInt(results[0]);
+      int hp = Integer.parseInt(results[1]);
+
+      TreeSet<Integer> hps = slotToHPMap.get(slot);
+
+      if(hps == null) {
+        hps = new TreeSet<>();
+        slotToHPMap.put(slot, hps);
+      }
+
+      hps.add(hp);
+    }
   }
 
   @Override
@@ -106,7 +129,7 @@ public class LootModule implements Module {
             Long delayUntil = delayedCorpses.get(spawn);
             Date timeOfDeath = spawn.getTimeOfDeath();
 
-            if(lootDelay == 0 || timeOfDeath == null || (new Date().getTime() - timeOfDeath.getTime() > lootDelay * 1000)) {
+            if(conf.getDelay() == 0 || timeOfDeath == null || (new Date().getTime() - timeOfDeath.getTime() > conf.getDelay() * 1000)) {
               if(delayUntil == null || delayUntil < System.currentTimeMillis()) {
                 if(!session.translate("${Cursor.ID}").equals("NULL")) {
                   session.echo("LOOT: Can't loot with an item on cursor");
@@ -139,10 +162,62 @@ public class LootModule implements Module {
 
                         String itemName = session.translate("${Corpse.Item[" + itemNo + "].Name}");
                         String itemId = session.translate("${Corpse.Item[" + itemNo + "].ID}");
-                        boolean noDrop = session.translate("${Corpse.Item[" + itemNo + "].NoDrop}").equals("TRUE");
 
-                        if(lootPattern == null || itemName.matches("(?i)" + lootPattern)) {
-                          LootType lootType = lootPattern != null || itemName.matches("(?i)" + alsoLootPattern) ? LootType.KEEP : lootManager.getLootType(itemName);
+                        boolean noDrop = session.translate("${Corpse.Item[" + itemNo + "].NoDrop}").equals("TRUE");
+                        boolean matchedPattern = !conf.getPattern().equals("off") && itemName.matches("(?i)" + conf.getPattern());
+
+                        if(conf.getUpgrades() == Mode.ON && noDrop) {
+                          String hp = session.translate("${Corpse.Item[" + itemNo + "].HP}");
+                          String type = session.translate("${Corpse.Item[" + itemNo + "].Type}");
+                          String wornSlot = session.translate("${Corpse.Item[" + itemNo + "].WornSlot[1]}");
+                          String classes = session.translate("${Corpse.Item[" + itemNo + "].Class[1]},${Corpse.Item[" + itemNo + "].Class[2]},${Corpse.Item[" + itemNo + "].Class[3]},${Corpse.Item[" + itemNo + "].Class[4]},${Corpse.Item[" + itemNo + "].Class[5]},${Corpse.Item[" + itemNo + "].Class[6]},${Corpse.Item[" + itemNo + "].Class[7]},${Corpse.Item[" + itemNo + "].Class[8]},${Corpse.Item[" + itemNo + "].Class[9]},${Corpse.Item[" + itemNo + "].Class[10]},${Corpse.Item[" + itemNo + "].Class[11]},${Corpse.Item[" + itemNo + "].Class[12]},${Corpse.Item[" + itemNo + "].Class[13]},${Corpse.Item[" + itemNo + "].Class[14]},${Corpse.Item[" + itemNo + "].Class[15]},${Corpse.Item[" + itemNo + "].Class[16]}");
+
+                          if(classes.contains(me.getClassLongName())) {  // Useable by me?
+                            if(type.equals("Augmentation")) {
+                              session.echo("LOOT: '" + itemName + "' is an augmentation... looting.");
+                              matchedPattern = true;
+                            }
+                            else if(!hp.equals("NULL") && !wornSlot.equals("NULL") && !hp.equals("NULL")) {
+                              int slot = Integer.parseInt(wornSlot);
+                              int itemHP = Integer.parseInt(hp);
+                              TreeSet<Integer> hps = slotToHPMap.get(slot);
+
+                              if(!hps.isEmpty()) {
+                                int bestHP = hps.last();
+
+                                if(slot == 3 || slot == 4 || slot == 9 || slot == 10 || slot == 15 || slot == 16) {
+                                  // 1,4  9,10  15,16
+                                  // 13,14 (mainhand offhand)
+
+                                  if(hps.size() > 1) {
+                                    bestHP = hps.lower(bestHP);
+                                  }
+                                  else {
+                                    bestHP = 0;
+                                  }
+                                }
+
+                                if(bestHP < itemHP) {
+                                  session.echo("LOOT: '" + itemName + "' looks better... looting.");
+                                  matchedPattern = true;
+                                  hps.add(itemHP);
+                                }
+                              }
+                              else {
+                                // Nothing in that slot, so loot
+                                session.echo("LOOT: '" + itemName + "' fits in an empty slot... looting.");
+                                matchedPattern = true;
+                                hps = new TreeSet<>();
+                                hps.add(itemHP);
+                                slotToHPMap.put(slot, hps);
+                              }
+                            }
+                          }
+                        }
+
+                        if(conf.getNormal() == Mode.ON || matchedPattern) {
+//                        if(conf.getPattern().equals("off") || itemName.matches("(?i)" + conf.getPattern())) {
+                          LootType lootType = matchedPattern ? LootType.KEEP : lootManager.getLootType(itemName);
 
                           if(lootType == null) {
                             lootType = noDrop ? LootType.IGNORE : LootType.KEEP;
