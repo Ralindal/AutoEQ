@@ -65,7 +65,6 @@ public class EverquestSession {
   private final Set<String> groupMemberNames = new HashSet<>();
   private final Set<String> botNames = new HashSet<>();
   private final Set<ProfileSet> profileSets = new LinkedHashSet<>();
-  private final Set<String> ignoreList = new HashSet<>();
 
   private Ini2 globalIni;
   private Ini2 ini;
@@ -179,6 +178,10 @@ public class EverquestSession {
     for(String name : groupMemberNames) {
       Spawn spawn = getSpawn(name);
 
+      if(spawn == null) {
+        spawn = getSpawn(name + "'s corpse");
+      }
+
       if(spawn != null) {
         members.add(spawn);
       }
@@ -256,6 +259,7 @@ public class EverquestSession {
   }
 
   private long lastUpdate = 0;
+  private final List<String> incomingCommands = new ArrayList<>();
 
   public void pulse(Collection<BotUpdateEvent> lastBotUpdateEvents) {
     try {
@@ -315,26 +319,9 @@ public class EverquestSession {
 
       startTimer("General Pulse Processing");
 
-      for(;;) {
-        String line;
-
-        synchronized(chatLines) {
-          if(chatLines.size() == 0) {
-            break;
-          }
-
-          if(chatLines.getFirst().startsWith("#")) {
-            // Encountered a data burst.  This should be processed before other chat lines.
-            break;
-          }
-
-          line = chatLines.removeFirst();
-        }
-
-        if(line.startsWith("[MQ2] jb-")) {
-          String cmd = line.substring(10);
-
-          log("USERCMD: " + cmd);
+      synchronized(incomingCommands) {
+        while(!incomingCommands.isEmpty()) {
+          String cmd = incomingCommands.remove(0);
 
           for(String s : userCommands.keySet()) {
             if(cmd.equals(s) || cmd.startsWith(s + " ")) {
@@ -350,14 +337,6 @@ public class EverquestSession {
 
               break;
             }
-          }
-        }
-
-        for(ChatListener listener : chatListeners) {
-          Matcher matcher = listener.getFilter().matcher(line);
-
-          if(matcher.matches()) {
-            listener.match(matcher);
           }
         }
       }
@@ -476,6 +455,22 @@ public class EverquestSession {
   private static final Pattern BOT_PATTERN = Pattern.compile("#B ([A-Za-z]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) B\\[([-0-9 ]*)\\] D\\[([-0-9 ]*)\\] SB\\[([-0-9 ]*)\\]");
   private static final Pattern ME_PATTERN = Pattern.compile("#M ([-0-9]+) ([-0-9]+) ([A-Za-z]+) .+");
 
+  private void handleNormalChatLine(String line) {
+    if(line.startsWith("[MQ2] jb-")) {
+      synchronized(incomingCommands) {
+        incomingCommands.add(line.substring(10));
+      }
+    }
+
+    for(ChatListener listener : chatListeners) {
+      Matcher matcher = listener.getFilter().matcher(line);
+
+      if(matcher.matches()) {
+        listener.match(matcher);
+      }
+    }
+  }
+
   private boolean processDataBursts() {
     boolean fullUpdate = false;
 
@@ -487,10 +482,8 @@ public class EverquestSession {
       startTimer("PDB1 collect burst");
 
       synchronized(chatLines) {
-        Iterator<String> chatLineIterator = chatLines.iterator();
-
-        while(chatLineIterator.hasNext()) {
-          String line = chatLineIterator.next();
+        while(!chatLines.isEmpty()) {
+          String line = chatLines.removeFirst();
 
           if(line.startsWith("#")) {
             if(line.startsWith("#F")) {
@@ -502,11 +495,14 @@ public class EverquestSession {
               zoning = true;
             }
             dataBurst.add(line);
-            chatLineIterator.remove();
+
             if(line.equals("##")) {
               unprocessedDataBurstCount--;
               break;
             }
+          }
+          else {
+            handleNormalChatLine(line);
           }
         }
       }
@@ -514,7 +510,7 @@ public class EverquestSession {
       endTimer("PDB1 collect burst");
 
       if(dataBurst.size() < 1) {
-        throw new RuntimeException("Assertion failed");
+        throw new RuntimeException("Assertion failed: dataBurst.size() = " + dataBurst.size());
       }
 
       if(!(dataBurst.get(0).startsWith("#F") || dataBurst.get(0).startsWith("#M"))) {
@@ -855,12 +851,14 @@ public class EverquestSession {
 
       try {
         processDataBursts();
-        Thread.sleep(condition != null ? 100 : 10);
+        Thread.sleep(condition != null ? 50 : 10);
       }
       catch(InterruptedException e) {
         throw new RuntimeException(e);
       }
     }
+
+    processDataBursts();
 
     return false;
   }
@@ -948,6 +946,7 @@ public class EverquestSession {
 
   private final Map<Integer, String> unmezzables = new HashMap<>();
   private final Map<Integer, String> falseNameds = new HashMap<>();
+  private final Map<Integer, String> ignoreds = new HashMap<>();
 
   public String getUnmezzables() {
     String unmezzables = this.unmezzables.get(getZoneId());
@@ -959,6 +958,12 @@ public class EverquestSession {
     String falseNameds = this.falseNameds.get(getZoneId());
 
     return falseNameds == null ? "" : falseNameds;
+  }
+
+  public String getIgnoreds() {
+    String ignoreds = this.ignoreds.get(getZoneId());
+
+    return ignoreds == null ? "" : ignoreds;
   }
 
   private void reloadGlobalIni() {
@@ -974,12 +979,16 @@ public class EverquestSession {
 
           String unmezzables = section.get("Unmezzables");
           String falseNameds = section.get("FalseNameds");
+          String ignoreds = section.get("Ignoreds");
 
           if(unmezzables != null) {
             this.unmezzables.put(zoneId, unmezzables);
           }
           if(falseNameds != null) {
             this.falseNameds.put(zoneId, falseNameds);
+          }
+          if(ignoreds != null) {
+            this.ignoreds.put(zoneId, ignoreds);
           }
         }
       }
@@ -1010,8 +1019,8 @@ public class EverquestSession {
           profileSets.add(new ProfileSet(profiles));
         }
 
-        for(String ignoreName : ini.getSection("General").getDefault("Ignore", "").split(";")) {
-          ignoreList.add(ignoreName);
+        if(ini.getSection("General").get("Ignore") != null) {
+          System.err.println("Warning: General/Ignore is no longer used, use global.ini");
         }
       }
     }
@@ -1284,10 +1293,6 @@ public class EverquestSession {
     return rawSpellData.get(id);
   }
 
-  public Set<String> getIgnoreList() {
-    return ignoreList;
-  }
-
   public Set<String> getActiveProfiles() {
     Set<String> activeProfiles = new HashSet<>();
 
@@ -1468,6 +1473,13 @@ public class EverquestSession {
           throw new SessionEndedException();
         }
 
+        if(waiters.size() > 0) {
+          System.err.println(Thread.currentThread() + ": waiters.size() = " + waiters.size() + ", but should be 0");
+        }
+        if(responses.size() > 0) {
+          System.err.println(Thread.currentThread() + ": responses.size() = " + responses.size() + ", but should be 0");
+        }
+
         int n = responseNumber++;
 
         lastProcessedMillis = System.currentTimeMillis();
@@ -1547,7 +1559,7 @@ public class EverquestSession {
         if(waiters.size() > 0 && lastResponseNumber == responseNumber && System.currentTimeMillis() - lastProcessedMillis > 450) {
           // Resend last request(s)
           for(Integer i : waiters.keySet()) {
-            System.err.println("Resending: $" + i + "-" + waiters.get(i));
+            System.err.println(Thread.currentThread() + ": Resending: $" + i + "-" + waiters.get(i));
             writer.println("$" + i + "-" + waiters.get(i));
             writer.flush();
             lastProcessedMillis = System.currentTimeMillis();
