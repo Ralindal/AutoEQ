@@ -88,7 +88,7 @@ public class ExperienceModule implements Module, ChatListener {
 
     session.echo(
       String.format(
-        "XP: L%d (%4.1f%%) @ %5.3f/h -- AA %d+%d (%4.1f%%) @ %4.2f/h %4.2f/10m - Kills %d @ %4.1f/h %4.1f/10m",
+        "XP: L%d (%4.1f%%) @ %5.3f/h - AA %d+%d (%.0f%%) @ %4.1f/h %4.2f/10m - Cnt %d @ %4.0f/h %4.1f/10m",
         me.getLevel(),
         me.getExperience() * 100,
         xp1hAgo / time1h * 60 * 60 * 1000,
