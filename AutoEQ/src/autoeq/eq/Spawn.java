@@ -8,6 +8,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -314,6 +315,30 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     }
   }
 
+  public String getClassLongName() {
+    switch(classId) {
+    case 0: return "?";
+    case 1: return "Warrior";
+    case 2: return "Cleric";
+    case 3: return "Paladin";
+    case 4: return "Ranger";
+    case 5: return "Shadow Knight";
+    case 6: return "Druid";
+    case 7: return "Monk";
+    case 8: return "Bard";
+    case 9: return "Rogue";
+    case 10: return "Shaman";
+    case 11: return "Necromancer";
+    case 12: return "Wizard";
+    case 13: return "Magician";
+    case 14: return "Enchanter";
+    case 15: return "Beastlord";
+    case 16: return "Berzerker";
+    default:// throw new RuntimeException("Unknown ClassID: " + classId);
+      return "?";
+    }
+  }
+
   public boolean isMe() {
     return session.getMe().equals(this);
   }
@@ -351,6 +376,26 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
    */
   public float getHeading() {
     return heading;
+  }
+
+  /**
+   * Distance to any member considered part of the group
+   */
+  public double getDistanceFromGroup(int maxDistanceToBeConsideredPartOfGroup) {
+    Set<Spawn> nearbyGroupMembers = session.getMe().getNearbyGroupMembers(maxDistanceToBeConsideredPartOfGroup);
+    double shortestDistance = Double.MAX_VALUE;
+
+    for(Spawn member : nearbyGroupMembers) {
+      double distance = getDistance(member);
+
+      if(distance < shortestDistance) {
+        shortestDistance = distance;
+      }
+    }
+
+    //System.out.println(">>> " + this + ": " + shortestDistance + " : " + nearbyGroupMembers);
+
+    return shortestDistance;
   }
 
   /**
@@ -463,6 +508,10 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
 
   public boolean isUnmezzable() {
     return name.matches(session.getUnmezzables());
+  }
+
+  public boolean isIgnored() {
+    return name.matches(session.getIgnoreds());
   }
 
   /**
@@ -801,6 +850,10 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     }
   }
 
+  public int getMobTimeToLive() {
+    return TTL_ANALYZER.getTimeToLive(this);
+  }
+
   public int getTimeToLive() {
     return getTimeToHitPointsPct(0);
   }
@@ -823,7 +876,15 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
   }
 
   public void updateHealth(int hitPointsPct) {
-    this.hitPointsPct = hitPointsPct;
+    if(hitPointsPct > 100) {
+      this.hitPointsPct = 100;
+    }
+    else if(hitPointsPct < 0) {
+      this.hitPointsPct = 0;
+    }
+    else {
+      this.hitPointsPct = hitPointsPct;
+    }
   }
 
   public void updateMana(int manaPct) {
@@ -950,6 +1011,8 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     }
   }
 
+  private final TreeMap<Integer, Long> healthTimes = new TreeMap<>();
+
   private static final Pattern NEG_10000 = Pattern.compile("-1\\.#J");
   private static final Pattern CLEAN_NUMBERS = Pattern.compile("[#0-9]");
   private static final Pattern CLEAN_UNDERSCORE = Pattern.compile("_");
@@ -1004,14 +1067,24 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
 
       casting = castingID <= 0 ? null : session.getSpell(castingID);
 
+      if(isAlive() || wasAlive) {
+        healthTimes.put(!isAlive() ? 0 : getHitPointsPct(), System.currentTimeMillis());
+      }
+
       if(wasAlive && !isAlive()) {
         timeOfDeath = new Date();
+
+        if(healthTimes.size() > 10 && healthTimes.higherKey(95) != null) {
+          TTL_ANALYZER.submit(new TreeMap<>(healthTimes), getLevel(), getName());
+        }
       }
     }
     else {
       System.err.println("WARNING: Unable to parse: " + infoParameter);
     }
   }
+
+  private static final TimeToLiveAnalyzer TTL_ANALYZER = new TimeToLiveAnalyzer();
 
   public Date getTimeOfDeath() {
     return timeOfDeath;
@@ -1140,7 +1213,7 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
 
   @Override
   public String toString() {
-    return "Spawn(\"" + name + "\", " + id + ", range " + (int)getDistance() + ", ttl " + getTimeToLive() + "(" + getMinTimeToLive() + "))";
+    return "Spawn(\"" + name + "\", " + id + ", range " + (int)getDistance() + ", ttl " + getTimeToLive() + "(" + getMobTimeToLive() + "))";
   }
 
 //  private static class HealthDataPoint {
