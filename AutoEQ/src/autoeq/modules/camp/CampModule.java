@@ -186,7 +186,7 @@ public class CampModule implements Module {
               double nearestDistance = Double.MAX_VALUE;
 
               for(Spawn spawn : session.getSpawns()) {
-                if(spawn.isEnemy()) {
+                if(!spawn.isIgnored() && spawn.isEnemy()) {
                   if(spawn.getDistance() < nearestDistance) {
                     nearestDistance = spawn.getDistance();
                     nearestEnemy = spawn;
