@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-
 import autoeq.ExpressionEvaluator;
 import autoeq.TargetPattern;
 import autoeq.ThreadScoped;
@@ -19,6 +18,7 @@ import autoeq.eq.Spawn;
 import autoeq.eq.UserCommand;
 import autoeq.ini.Section;
 import autoeq.modules.camp.CampModule;
+import autoeq.modules.target.TargetConf.Mode;
 
 import com.google.inject.Inject;
 
@@ -30,8 +30,7 @@ public class TargetModule implements Module {
   private final List<String> conditions;
   private final List<String> assistConditions;
 
-  private String targetSelection;
-  private int range = 50;
+  private TargetConf conf = new TargetConf();
   private boolean attacking;
   private String[] names;
 
@@ -51,7 +50,9 @@ public class TargetModule implements Module {
     if(section.get("Active") != null) {
       System.err.println("WARN: Target/Active is deprecated, set Mode to 'off' if you donot want targetting");
     }
-    targetSelection = section.getDefault("Mode", "assist");
+
+    conf.setMode(Mode.valueOf(section.getDefault("Mode", "assist").toUpperCase()));
+
     validTargets = section.getDefault("ValidTargets", "war pal shd mnk rog ber rng bst brd clr shm dru enc mag nec wiz pet");
     conditions = section.getAll("Condition");
     assistConditions = section.getAll("AssistCondition");
@@ -60,16 +61,13 @@ public class TargetModule implements Module {
     session.addUserCommand("target", Pattern.compile(".+"), CommandLineParser.getHelpString(TargetConf.class), new UserCommand() {
       @Override
       public void onCommand(Matcher matcher) {
-        TargetConf conf = new TargetConf();
-        CommandLineParser.parse(conf, matcher.group(0));
+        TargetConf newConf = new TargetConf(conf);
 
-        if(conf.getMode() != null) {
-          targetSelection = conf.getMode().name().toLowerCase();
-        }
+        CommandLineParser.parse(newConf, matcher.group(0));
 
-        range = conf.getRange();
+        conf = newConf;
 
-        session.echo("==> Target acquirement is " + (targetSelection.equals("off") ? "off" : "on") + ".  Mode is: " + targetSelection + ".  Range is " + range + ".");
+        session.echo("==> Target acquirement is " + (conf.getMode() == Mode.OFF ? "off" : "on") + ".  Mode is: " + conf.getMode() + ".  Range is " + conf.getRange() + ".");
       }
     });
   }
@@ -83,7 +81,7 @@ public class TargetModule implements Module {
     if(spawn.isEnemy()) {
       if(TargetPattern.isValidTarget(validTargets, spawn)) {
         if(ExpressionEvaluator.evaluate(conditions, new ExpressionRoot(session, spawn, null, null, null), this)) {
-          if(!targetSelection.equals("assist") || ExpressionEvaluator.evaluate(assistConditions, new ExpressionRoot(session, spawn, null, null, null), this)) {
+          if(conf.getMode() != Mode.ASSIST || ExpressionEvaluator.evaluate(assistConditions, new ExpressionRoot(session, spawn, null, null, null), this)) {
             return true;
           }
         }
@@ -103,7 +101,7 @@ public class TargetModule implements Module {
   public Spawn getMainAssistTarget() {
     Spawn bestTarget = currentTarget;
 
-    if(!targetSelection.equals("off")) {
+    if(conf.getMode() != Mode.OFF) {
       Me me = session.getMe();
       boolean campSet = false;
       float x = me.getX();
@@ -117,11 +115,11 @@ public class TargetModule implements Module {
         }
       }
 
-      if(targetSelection.equals("assist")) {
+      if(conf.getMode() == Mode.ASSIST) {
         Spawn target = getFromAssist();
 
         if(target != null) {
-          if(Math.abs(target.getZ() - me.getZ()) < 30 && target.getDistance(x, y) < range) {
+          if(Math.abs(target.getZ() - me.getZ()) < 30 && target.getDistance(x, y) < conf.getRange()) {
             if(isValidTarget(target)) {
               bestTarget = target;
             }
@@ -133,16 +131,16 @@ public class TargetModule implements Module {
           bestTarget = session.getSpawn(bestTarget.getId());
         }
 
-        if(bestTarget != null && (!bestTarget.isEnemy() || (bestTarget.getDistance() > range && !me.isExtendedTarget(bestTarget)))) {
+        if(bestTarget != null && (!bestTarget.isEnemy() || (bestTarget.getDistance() > conf.getRange() && !me.isExtendedTarget(bestTarget)))) {
           bestTarget = null;
         }
 
         if(bestTarget == null) {
           // session.echo("TARGET: Mode = " + targetSelection + ":" + this);
 
-          if(targetSelection.equals("oldest")) {
+          if(conf.getMode() == Mode.OLDEST) {
             for(Spawn target : session.getSpawns()) {
-              if(Math.abs(target.getZ() - me.getZ()) < 30 && target.getDistance(x, y) < range) {
+              if(!target.isIgnored() && Math.abs(target.getZ() - me.getZ()) < 30 && target.getDistance(x, y) < conf.getRange()) {
                 if(isValidTarget(target) && (bestTarget == null || target.getCreationDate().before(bestTarget.getCreationDate()))) {
                   bestTarget = target;
                 }
@@ -153,9 +151,9 @@ public class TargetModule implements Module {
               session.echo("TARGET: Targetting Oldest [ " + bestTarget.getName() + " ]. " + (System.currentTimeMillis() - bestTarget.getCreationDate().getTime()) / 1000 + "s old.  attacking = " + attacking + " ; melee status = " + me.getMeleeStatus());
             }
           }
-          else if(targetSelection.equals("highest_level")) {
+          else if(conf.getMode() == Mode.HIGHEST_LEVEL) {
             for(Spawn target : session.getSpawns()) {
-              if((Math.abs(target.getZ() - me.getZ()) < 30 && target.getDistance(x, y) < range) || me.isExtendedTarget(target)) {
+              if((!target.isIgnored() && Math.abs(target.getZ() - me.getZ()) < 30 && target.getDistance(x, y) < conf.getRange()) || me.isExtendedTarget(target)) {
                 if(isValidTarget(target) && (bestTarget == null || target.getLevel() > bestTarget.getLevel())) {
                   bestTarget = target;
                 }
@@ -166,11 +164,11 @@ public class TargetModule implements Module {
               session.echo("TARGET: Targetting Highest [ " + bestTarget.getName() + " ].  Level " + bestTarget.getLevel() + ".");
             }
           }
-          else if(targetSelection.equals("smart")) {
+          else if(conf.getMode() == Mode.SMART) {
             int bestScore = 0;
 
             for(Spawn target : session.getSpawns()) {
-              if((Math.abs(target.getZ() - me.getZ()) < 30 && target.getDistance(x, y) < range) || me.isExtendedTarget(target)) {
+              if((!target.isIgnored() && Math.abs(target.getZ() - me.getZ()) < 30 && target.getDistance(x, y) < conf.getRange()) || me.isExtendedTarget(target)) {
                 // First unmezzables, then named, then by level
                 int score = target.getLevel() + (target.isUnmezzable() ? 1000 : 0) + (target.isNamedMob() ? 500 : 0);
 
@@ -185,9 +183,9 @@ public class TargetModule implements Module {
               session.echo("TARGET: Targetting [ " + bestTarget.getName() + " ].  Level " + bestTarget.getLevel() + (bestTarget.isUnmezzable() ? ", Unmezzable" : "") + (bestTarget.isNamedMob() ? ", Named" : "") + ".");
             }
           }
-          else if(targetSelection.equals("nearest")) {  // nearest
+          else if(conf.getMode() == Mode.NEAREST) {  // nearest
             for(Spawn target : session.getSpawns()) {
-              if(Math.abs(target.getZ() - me.getZ()) < 30 && target.getDistance(x, y) < range) {
+              if(!target.isIgnored() && Math.abs(target.getZ() - me.getZ()) < 30 && target.getDistance(x, y) < conf.getRange()) {
                 if(isValidTarget(target) && (bestTarget == null || bestTarget.getDistance(x, y) > target.getDistance(x, y))) {
                   bestTarget = target;
                 }
@@ -199,7 +197,7 @@ public class TargetModule implements Module {
             }
           }
           else {
-            throw new IllegalStateException("Unknown targetSelection: " + targetSelection);
+            throw new IllegalStateException("Unknown targetSelection: " + conf.getMode());
           }
 
           currentTarget = bestTarget;
@@ -224,7 +222,7 @@ public class TargetModule implements Module {
   private Spawn lastAgroTarget;
 
   public Spawn getMainAssist() {
-    if(targetSelection.equals("assist")) {
+    if(conf.getMode() == Mode.ASSIST) {
       for(String mainAssist : names) {
         Spawn spawn = session.getSpawn(mainAssist);
 
