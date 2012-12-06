@@ -59,20 +59,10 @@ public class BuffLine implements Iterable<EffectSet> {
     boolean valid = validTargets != null ? TargetPattern.isValidTarget(validTargets, target) : true;
 
     EffectSet effectSet = effectSets.get(0);
-    TargetType targetType;
-
-    if(effectSet.getSingle() != null) {
-      targetType = effectSet.getSingle().getSpell().getTargetType();
-    }
-    else {
-      targetType = effectSet.getGroup().getSpell().getTargetType();
-    }
+    TargetType targetType = effectSet.getSingleOrGroup().getSpell().getTargetType();
 
     valid = valid && ((targetType == TargetType.CORPSE) == !target.isAlive());
-
-    if(valid) {
-      valid = ExpressionEvaluator.evaluate(conditions, new ExpressionRoot(target.getSession(), target, null, null, null), this);
-    }
+    valid = valid && ExpressionEvaluator.evaluate(conditions, new ExpressionRoot(target.getSession(), target, null, null, effectSet.getSingleOrGroup()), this);
 
     return valid;
   }

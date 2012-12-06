@@ -1,6 +1,7 @@
 package autoeq.modules.buff;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -39,6 +40,8 @@ public class BuffModule implements Module {
   @Inject
   public BuffModule(EverquestSession session) {
     this.session = session;
+
+    activeProfiles.add("--no active profile--");
   }
 
   @Override
@@ -138,18 +141,26 @@ public class BuffModule implements Module {
     List<Buff> buffs = new ArrayList<>();
 
     for(BuffLine buffLine : buffLines) {
+      // System.out.println(">>> " + buffLine + " : " + buffLine.isEnabled() + " : " + buffLine.getProfile());
       if(session.isProfileActive(buffLine.getProfile()) && buffLine.isEnabled()) {
         Map<EffectSet, List<Spawn>> m = new HashMap<>();
 
         for(Spawn potentialTarget : potentialTargets) {
+//          if(buffLine.iterator().next().getSingleOrGroup().getSpell().getName().contains("Unity")) {
+//            System.out.println(">>> Unity");
+//          }
 
 //          System.out.println("PotBuffTarget : " + potentialTarget + " " + potentialTarget.getType());
-          if(buffLine.isValidTarget(potentialTarget) && potentialTarget.getDistance() < 1000) {
+          if(buffLine.isValidTarget(potentialTarget) && potentialTarget.getDistance() < 1000) {  // TODO isValidTarget uses the "best" spell for the Effect parameter, but that may not be the actual spell we're gonna cast
 
             spellSetLoop:
             for(EffectSet effectSet : buffLine) {  // SpellSets are spell of the same "buff level", not necessarily same spell level.  Usually group + single target.
               for(Effect effect : effectSet.getEffects()) {  // All spells are from book
                 Spell spell = effect.getSpell();
+
+//                if(spell.getName().contains("Unity")) {
+//                  System.out.println(">>> Unity");
+//                }
 
                 if(((effect.getType() != Type.SPELL && effect.getType() != Type.SONG) || (spell.isWithinLevelRestrictions(potentialTarget) && spell.getLevel() <= session.getMe().getLevel()))) {  // Level check here in case of delevelling (but spell is still in book)
 //                  System.out.println(potentialTarget + " is a valid target for " + spell);
@@ -223,7 +234,6 @@ public class BuffModule implements Module {
       if(!ActivateEffectCommand.checkRangeAndTargetType(buff.getEffect(), buff.getTargets())) {
         iterator.remove();
       }
-
     }
 
     return buffs;
