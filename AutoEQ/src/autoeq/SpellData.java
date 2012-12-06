@@ -5,6 +5,7 @@ import autoeq.eq.ResistType;
 
 public class SpellData {
   public static final int ATTRIB_DAMAGE = 0;
+  public static final int ATTRIB_MOVEMENT = 3;
   public static final int ATTRIB_SLOW = 11;
   public static final int ATTRIB_CHARM = 22;
   public static final int ATTRIB_MESMERIZE = 31;

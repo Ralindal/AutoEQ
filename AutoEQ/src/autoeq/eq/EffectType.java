@@ -7,5 +7,6 @@ public enum EffectType {
   DAMAGE_OVER_TIME,
   SLOW,
   TWIN_CAST,
+  SNARED,
   UNCLASSIFIED
 }

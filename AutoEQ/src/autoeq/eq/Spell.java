@@ -30,6 +30,7 @@ public class Spell {
   private final boolean isMez;
   private final boolean isHealOverTime;
   private final boolean isTwinCast;
+  private final boolean isSnared;
 
 //  private final Map<Integer, Boolean> willStackCache = new HashMap<Integer, Boolean>();
 //
@@ -78,6 +79,7 @@ public class Spell {
 
     isHealOverTime = sd.hasAttribute(SpellData.ATTRIB_HEAL_OVER_TIME) || (sd.hasAttribute(SpellData.ATTRIB_DAMAGE) && sd.getBase(sd.getAttributeIndex(SpellData.ATTRIB_DAMAGE)) > 100 && duration <= 120);
     isSlow = sd.hasAttribute(SpellData.ATTRIB_SLOW);
+    isSnared = sd.hasAttribute(SpellData.ATTRIB_MOVEMENT) && sd.getBase(sd.getAttributeIndex(SpellData.ATTRIB_MOVEMENT)) < 0;
   }
 
   public EffectType getEffectType() {
@@ -87,11 +89,14 @@ public class Spell {
     if(isCharm) {
       return EffectType.CHARM;
     }
-    if(isHealOverTime) {
-      return EffectType.HEAL_OVER_TIME;
+    if(isSnared) {
+      return EffectType.SNARED;
     }
     if(isSlow) {
       return EffectType.SLOW;
+    }
+    if(isHealOverTime) {
+      return EffectType.HEAL_OVER_TIME;
     }
     if(isTwinCast) {
       return EffectType.TWIN_CAST;
@@ -101,6 +106,10 @@ public class Spell {
     }
 
     return EffectType.UNCLASSIFIED;
+  }
+
+  public boolean isSnared() {
+    return isSnared;
   }
 
   public int getLevel() {
@@ -239,7 +248,7 @@ public class Spell {
    */
   public boolean isTargetted() {
     //System.err.println("++isTargetted " + this + "; tt = " + targetType + "; dur = " + duration + "; brdlvl = " + session.getRawSpellData(id).getBrdLevel());
-    return targetType.equals("corpse") || !(targetType.equals("self") || (targetType.startsWith("group") && (duration == 0 || session.getMe().isBard())));
+    return targetType.equals("corpse") || !(targetType.equals("self") || targetType.equals("pb ae") || (targetType.startsWith("group") && (duration == 0 || session.getMe().isBard())));
   }
 
   public String getTargetTypeAsString() {
@@ -251,11 +260,22 @@ public class Spell {
   }
 
   public TargetType getTargetType() {
+
+    /*
+     * Note: Scorch Bones = single target, but with AE range of 1.0
+     */
+
     if(targetType.equals("pb ae")) {
       return TargetType.PBAE;
     }
     else if(targetType.equals("corpse")) {
       return TargetType.CORPSE;
+    }
+    else if(targetType.equals("single")) {
+      return TargetType.SINGLE;
+    }
+    else if(targetType.equals("targeted ae")) {
+      return TargetType.TARGETED_AE;
     }
 
     return aeRange > 0.0 ? TargetType.GROUP : TargetType.SINGLE;
