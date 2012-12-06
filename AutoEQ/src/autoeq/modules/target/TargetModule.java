@@ -236,16 +236,13 @@ public class TargetModule implements Module {
   }
 
   public Spawn getFromAssist() {
-    boolean haveBots = false;
-
     Spawn mainAssist = getMainAssist();
     Spawn target = null;
 
     if(session.getBots().contains(mainAssist)) {
       target = mainAssist.getTarget();
-      haveBots = true;
     }
-    else if(lastAssistMillis + 5000 < System.currentTimeMillis() && !haveBots) {
+    else if(lastAssistMillis + 5000 < System.currentTimeMillis()) {
       boolean mobNearby = false;
 
       for(Spawn nearbySpawn : session.getSpawns()) {
@@ -256,7 +253,7 @@ public class TargetModule implements Module {
         }
       }
 
-      if(mobNearby) {
+      if(mobNearby && mainAssist.getDistance() < 50) {  // Only assist if main assist nearby, otherwise assist command fails and we'll assume that whatever we had targetted must be the main target(!!)
         final String currentTarget = session.translate("${Target.ID}");
 
         lastAssistMillis = System.currentTimeMillis();
