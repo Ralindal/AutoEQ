@@ -51,16 +51,9 @@ public class ActivateEffectCommand implements Command {
        * for Unity of the Spirits.
        */
 
-      SpellData spellData = session.getRawSpellData(effect.getSpell().getId());
-
-      for(int i = 0; i < 12; i++) {
-        if(spellData.getAttrib(i) == SpellData.ATTRIB_AUTO_CAST) {
-          if(spellData.getBase(i) == 100) { // 100 = 100% chance
-            // Base2 is the ID of the auto cast spell
-            for(Spawn target : targets) {
-              target.getSpellEffectManager((int)spellData.getBase2(i)).addCastResult(castResult);
-            }
-          }
+      for(Spell autoCastedSpell : effect.getSpell().getAutoCastedSpells()) {
+        for(Spawn target : targets) {
+          target.getSpellEffectManager(autoCastedSpell).addCastResult(castResult);
         }
       }
 
@@ -68,7 +61,7 @@ public class ActivateEffectCommand implements Command {
        * Handles shrink
        */
 
-      if(spellData.hasAttribute(SpellData.ATTRIB_SHRINK)) {
+      if(effect.getSpell().getRawSpellData().hasAttribute(SpellData.ATTRIB_SHRINK)) {
         for(Spawn target : targets) {
           target.getSpellEffectManager(effect.getSpell()).addCastResult("CAST_SHRINK");
         }

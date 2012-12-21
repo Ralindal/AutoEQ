@@ -1,8 +1,10 @@
 package autoeq.eq;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -121,7 +123,7 @@ public class Spell {
   }
 
   /**
-   * Cast time in milliseconds.
+   * Cast time in milliseconds.  Note that this will return incorrect values for spells attached to items, use effect.getCastTime() instead.
    */
   public int getCastTime() {
     return castTime;
@@ -164,17 +166,31 @@ public class Spell {
     }
     else {
       if(getDuration() == 0) {
+        return true;  // Spells with no duration always work
+      }
+
+      if(getLevel() < 50) {
+        return true;  // Level 1-49 spells hold on everyone
+      }
+
+      if(target.getLevel() < 61 && getLevel() > 65) {
+        return false; // Level 66+ Spells never hold on targets below level 61
+      }
+
+      // TODO the 2 rules below are basically the same, with a one level difference.  Need to test if a 55 spell can hold on 42 or 61 on 45 or 63 on 46.
+      if(target.getLevel() > 60 && 93 + (target.getLevel() - 61) * 2 >= getLevel()) {
+        // If target is level 61+ then spells below level 94 will hold.  Beyond that:
+        // Assumption: Lvl 93 spell holds on 61, lvl 94 doesn't
+        // Assumption: Lvl 95 spell holds on 62, lvl 96 doesn't
+        // Assumption: Lvl 97 spell holds on 63, lvl 98 doesn't
         return true;
       }
 
-      if(target.getLevel() > 60 || getLevel() < 50) {
-        return true;
-      }
-      // For Level 50 - 65 spells there is a special level based rule based on:
-      // Assumption: Clarity II(54) holds on level 42
-      // Assumption: Aegolism(60) holds on Level 45
-      // Assumption: Virtue(62) holds on Level 46
       if(getLevel() < 66 && 50 + (target.getLevel() - 40) * 2 >= getLevel()) {
+        // For Level 50 - 65 spells there is a special level based rule based on:
+        // Assumption: Clarity II(54) holds on level 42
+        // Assumption: Aegolism(60) holds on Level 45
+        // Assumption: Virtue(62) holds on Level 46
         return true;
       }
 
@@ -330,6 +346,21 @@ public class Spell {
 
   public boolean isHealOverTime() {
     return isHealOverTime;
+  }
+
+  public List<Spell> getAutoCastedSpells() {
+    List<Spell> autoCastedSpells = new ArrayList<>();
+
+    for(int i = 0; i < 12; i++) {
+      if(sd.getAttrib(i) == SpellData.ATTRIB_AUTO_CAST) {
+        if(sd.getBase(i) == 100) { // 100 = 100% chance
+          // Base2 is the ID of the auto cast spell
+          autoCastedSpells.add(session.getSpell((int)sd.getBase2(i)));
+        }
+      }
+    }
+
+    return autoCastedSpells;
   }
 
   private static final Pattern BASE_SPELL_NAME = Pattern.compile("(.*?)( +Rk\\. *(II|III))?");
