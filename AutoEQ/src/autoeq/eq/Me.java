@@ -8,15 +8,13 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import autoeq.SpellData;
-import autoeq.effects.AlternateAbilityEffect;
 import autoeq.effects.Effect;
 import autoeq.effects.Effect.Type;
-import autoeq.effects.ItemEffect;
-
 
 public class Me extends Spawn {
   private static final int SPELL_GEMS = 12;
@@ -39,14 +37,24 @@ public class Me extends Spawn {
     RESISTED("CAST_RESIST", 5),
     DID_NOT_TAKE_HOLD("CAST_TAKEHOLD", 5),
     SITTING("CAST_STANDING", 5),
-    STUNNED("CAST_STUNNED", 5);
+    STUNNED("CAST_STUNNED", 5),
+
+    SELF_RESIST(RESISTED);  // Cancels out a resist
 
     private final int rootCauseLevel;
     private final String code;
+    private final CastResult cancelsOut;
 
     CastResult(String code, int rootCauseLevel) {
       this.code = code;
       this.rootCauseLevel = rootCauseLevel;
+      this.cancelsOut = null;
+    }
+
+    CastResult(CastResult cancelsOut) {
+      this.cancelsOut = cancelsOut;
+      this.code = "CAST_SUCCESS";
+      this.rootCauseLevel = 0;
     }
 
     public String getCode() {
@@ -55,6 +63,10 @@ public class Me extends Spawn {
 
     public int getRootCauseLevel() {
       return rootCauseLevel;
+    }
+
+    public CastResult getCancelsOut() {
+      return cancelsOut;
     }
   }
 
@@ -67,19 +79,22 @@ public class Me extends Spawn {
     EXACT_MESSAGE_TO_CAST_RESULT.put("You must first select a target for this spell!", CastResult.MISSING_TARGET);
     EXACT_MESSAGE_TO_CAST_RESULT.put("You must be standing to cast a spell.", CastResult.SITTING);
     EXACT_MESSAGE_TO_CAST_RESULT.put("Your spell fizzles!", CastResult.FIZZLED);
+    EXACT_MESSAGE_TO_CAST_RESULT.put("Your spell is too powerful for your intended target.", CastResult.DID_NOT_TAKE_HOLD);
+    EXACT_MESSAGE_TO_CAST_RESULT.put("This spell only works on the undead.", CastResult.IMMUNE);
+
+    MESSAGE_TO_CAST_RESULT.put("You resist the {SPELL_NAME} spell!", CastResult.SELF_RESIST);   //"You resist the {1} spell!"
+    MESSAGE_TO_CAST_RESULT.put("Your target resisted the {SPELL_NAME} spell.", CastResult.RESISTED);
 
     MESSAGE_TO_CAST_RESULT.put("You *CANNOT* cast spells, you have been silenced", CastResult.DISTRACTED);
     MESSAGE_TO_CAST_RESULT.put("Your target cannot be mesmerized", CastResult.IMMUNE);
-    MESSAGE_TO_CAST_RESULT.put("This spell only works on ", CastResult.MISSING_TARGET);
+    MESSAGE_TO_CAST_RESULT.put("This spell only works on ", CastResult.IMMUNE);
     MESSAGE_TO_CAST_RESULT.put("You must first target a group member", CastResult.MISSING_TARGET);
     MESSAGE_TO_CAST_RESULT.put("Spell recast time not yet met", CastResult.NOT_READY);
     MESSAGE_TO_CAST_RESULT.put("Insufficient Mana to cast this spell", CastResult.INSUFFICIENT_MANA);
     MESSAGE_TO_CAST_RESULT.put("Your target is out of range, get closer", CastResult.OUT_OF_RANGE);
-    MESSAGE_TO_CAST_RESULT.put("Your target resisted the ", CastResult.RESISTED);
     MESSAGE_TO_CAST_RESULT.put("You can't cast spells while stunned", CastResult.STUNNED);
     MESSAGE_TO_CAST_RESULT.put("Your spell did not take hold", CastResult.DID_NOT_TAKE_HOLD);
     MESSAGE_TO_CAST_RESULT.put("Your spell would not have taken hold", CastResult.DID_NOT_TAKE_HOLD);
-    MESSAGE_TO_CAST_RESULT.put("Your spell is too powerfull for your intended target", CastResult.DID_NOT_TAKE_HOLD);
     MESSAGE_TO_CAST_RESULT.put("You need to be in a more open area to summon a mount", CastResult.DID_NOT_TAKE_HOLD);
     MESSAGE_TO_CAST_RESULT.put("You can only summon a mount on dry land", CastResult.DID_NOT_TAKE_HOLD);
 
@@ -128,6 +143,7 @@ public class Me extends Spawn {
   private int aaSaved;
   private int aaCount;
   private boolean invisible;
+  private int castingID;
 
   private long mobLastGateCastMillis;
   private long lastCastMillis;
@@ -190,27 +206,60 @@ public class Me extends Spawn {
 
       @Override
       public void match(Matcher matcher) {
-        String line = matcher.group(0);
-        CastResult castResult = EXACT_MESSAGE_TO_CAST_RESULT.get(line);
+        if(castedSpellName != null) {
+          String line = matcher.group(0);
+          CastResult castResult = EXACT_MESSAGE_TO_CAST_RESULT.get(line);
 
-        if(castResult == null) {
-          for(Map.Entry<String, CastResult> entry : MESSAGE_TO_CAST_RESULT.entrySet()) {
-            if(line.startsWith(entry.getKey())) {
-              castResult = entry.getValue();
+          if(castResult == null) {
+            for(Map.Entry<String, CastResult> entry : MESSAGE_TO_CAST_RESULT.entrySet()) {
+              String message = entry.getKey().replaceAll("\\{SPELL_NAME\\}", castedSpellName);
+
+              if(line.startsWith(message)) {
+                castResult = entry.getValue();
+              }
             }
           }
-        }
 
-        if(castResult != null) {
-          if(lastSeenCastResult == null || lastSeenCastResult.getRootCauseLevel() < castResult.getRootCauseLevel()) {
-            lastSeenCastResult = castResult;
+          if(castResult != null) {
+            lastSeenCastResults.add(castResult);
           }
         }
       }
     });
   }
 
-  private volatile CastResult lastSeenCastResult = null;
+  private final ConcurrentLinkedQueue<CastResult> lastSeenCastResults = new ConcurrentLinkedQueue<>();
+  private volatile String castedSpellName;
+
+  private void resetCastResult(String spellName) {
+    lastSeenCastResults.clear();
+    castedSpellName = spellName;
+  }
+
+  private CastResult getCastResult() {
+    retry:
+    for(;;) {
+      for(CastResult castResult : lastSeenCastResults) {
+        if(castResult.getCancelsOut() != null) {
+          lastSeenCastResults.remove(castResult.getCancelsOut());
+          lastSeenCastResults.remove(castResult);
+          continue retry;
+        }
+      }
+
+      break;
+    }
+
+    CastResult finalCastResult = CastResult.SUCCESS;
+
+    for(CastResult castResult : lastSeenCastResults) {
+      if(castResult.getRootCauseLevel() > finalCastResult.getRootCauseLevel()) {
+        finalCastResult = castResult;
+      }
+    }
+
+    return finalCastResult;
+  }
 
   public String getMeleeStatus() {
     return meleeStatus;
@@ -254,7 +303,7 @@ public class Me extends Spawn {
   public void memorize(int spellId, int spellSlot) {
     session.doCommand("/autoinventory");
 
-    final int slot = spellSlot != 0 ? spellSlot : getPreferredGem();
+    final int slot = spellSlot != 0 && spellSlot <= maxSpellSlots ? spellSlot : getPreferredGem();
 
     if(slot != 0) {
       final Spell spell = session.getSpell(spellId);
@@ -316,6 +365,20 @@ public class Me extends Spawn {
     if(isBard()) {
       session.doCommand("/stopcast");
     }
+    else if(isMoving()) {
+      session.echo("Halting movement");
+      session.doCommand("/nomod /keypress back");
+      session.delay(500, new Condition() {
+        @Override
+        public boolean isValid() {
+          return !isMoving();
+        }
+      });
+      session.doCommand("/nomod /keypress left hold");
+      session.delay(50);
+      session.doCommand("/nomod /keypress left");
+      session.delay(200);
+    }
 
     if(effect.getSpell().isTargetted()) {
       session.doCommand("/target id " + target.getId());
@@ -323,144 +386,65 @@ public class Me extends Spawn {
     }
 
     session.doCommand("/stand");
-
-    if(effect.getType() == Type.SPELL || effect.getType() == Type.SONG) {
-      session.doCommand("/cast " + session.getMe().getGem(effect.getSpell()));
-    }
-    else if(effect.getType() == Type.ABILITY) {
-      session.doCommand("/alt activate ${Me.AltAbility[" + ((AlternateAbilityEffect)effect).getName() + "].ID}");
-    }
-    else if(effect.getType() == Type.ITEM) {
-      session.doCommand("/nomodkey /itemnotify ${FindItem[=" + ((ItemEffect)effect).getName() + "].InvSlot} rightmouseup");
-    }
-    else {
-      session.doCommand("/nomod /doability \"" + effect.getSpell().getName() + "\"");
-    }
+    session.doCommand(effect.getCastingLine());
 
     if(effect.getType() != Type.DISCIPLINE) {
-      if(effect.getSpell().getCastTime() > 0) {
+      try {
+        int castingID = effect.getSpell().getId();  // ID of spell that was cast, initialized here with the intended ID for instant spells only.
 
-        // Wait until we've started the cast
-        session.delay(500, new Condition() {
-          @Override
-          public boolean isValid() {
-            return !session.translate("${Me.Casting.ID}").equals("NULL");
-          }
-        });
+        resetCastResult(effect.getSpell().getName());
 
-        lastSeenCastResult = null;
+        if(effect.getCastTime() > 0) {
+          // Wait until we've started the cast
+          session.delay(500, new Condition() {
+            @Override
+            public boolean isValid() {
+              return Me.this.getCastingID() != 0;
+            }
+          });
 
-        // Wait until we've ended the cast
-        session.delay(30000, new Condition() {
-          @Override
-          public boolean isValid() {
-            return session.translate("${Me.Casting.ID}").equals("NULL");
-          }
-        });
-      }
+          castingID = getCastingID();
 
-      if(effect.getType() == Type.SPELL || effect.getType() == Type.SONG) {
-        updateLRUSlots(getGem(effect.getSpell()));
-      }
-
-      lastCastMillis = System.currentTimeMillis();
-
-      /*
-       * Get the result
-       */
-
-      session.delay(300, new Condition() {
-        @Override
-        public boolean isValid() {
-          return lastSeenCastResult != null;
+          // Wait until we've ended the cast
+          session.delay(30000, new Condition() {
+            @Override
+            public boolean isValid() {
+              return Me.this.getCastingID() == 0;
+            }
+          });
         }
-      });
 
-      return lastSeenCastResult == null ? "CAST_SUCCESS" : lastSeenCastResult.getCode();
+        if(effect.getType() == Type.SPELL || effect.getType() == Type.SONG) {
+          updateLRUSlots(getGem(effect.getSpell()));
+        }
+
+        lastCastMillis = System.currentTimeMillis();
+
+        /*
+         * Get the result
+         */
+
+        session.delay(300, new Condition() {
+          @Override
+          public boolean isValid() {
+            return getCastResult() != CastResult.SUCCESS;
+          }
+        });
+
+        if(effect.getSpell().getId() != castingID) {
+          session.log("Mismatched cast, expected " + effect.getSpell() + ", but got: " + (castingID == 0 ? "nothing" : session.getSpell(castingID)));
+
+          return "CAST_INTERRUPTED";
+        }
+
+        return getCastResult().getCode();
+      }
+      finally {
+        resetCastResult(null);
+      }
     }
 
     return "CAST_SUCCESS";
-  }
-
-  public String activateEffect2(Effect effect, Spawn target) {
-    if(isBard()) {
-      session.doCommand("/stopcast");
-    }
-
-    String casting = effect.getCastingLine();
-
-    long start = System.currentTimeMillis();
-
-    if(effect.getSpell().isTargetted()) {
-      if(isBard() || effect.getType() == Type.DISCIPLINE) {
-        session.doCommand("/target id " + target.getId());
-        session.delay(1000, "${Target.ID} == " + target.getId());
-      }
-      else {
-        casting += (target != null ? " -targetid|" + target.getId() : "");
-      }
-    }
-
-    session.doCommand("/stand");
-    session.doCommand(casting);
-//    updateLRUSlots(slot);
-
-    if(effect.getType() != Type.DISCIPLINE) {
-      // Wait until we've started the cast
-      session.delay(1000, new Condition() {
-        @Override
-        public boolean isValid() {
-          return session.translate("${Cast.Status}").contains("C");
-        }
-      });
-
-      long castStart = System.currentTimeMillis();
-
-      // Wait until we've ended the cast
-      session.delay(30000, new Condition() {
-        @Override
-        public boolean isValid() {
-          return session.translate("${Cast.Status}").equals("I");
-        }
-      });
-
-      long castEnd = System.currentTimeMillis();
-
-      // Short delay so MQ2CAST can update Cast.Result... sigh
-      session.delay(50);
-
-      if(effect.getType() == Type.SPELL || effect.getType() == Type.SONG) {
-        updateLRUSlots(getGem(effect.getSpell()));
-      }
-
-      lastCastMillis = System.currentTimeMillis();
-
-//      if(isBard()) {
-//        session.doCommand("/stopcast");
-//        session.delay(200);
-//      }
-
-      for(int i = 0; i < 20; i++) {
-        String[] results = session.translate("${Cast.Stored};${Cast.Result}").split(";");
-
-        if(Spell.baseSpellName(results[0]).equals(Spell.baseSpellName(effect.getSpell().getName()))) {
-          if(results[0].equals("CAST_RECOVER")) {
-            System.err.println("Casting " + effect.getSpell() + " -> RECOVER : time taken " + (lastCastMillis - start));
-          }
-
-          //session.log("CastTime for " + effect.getSpell() + ": " + (System.currentTimeMillis() - start) + " ms, " + (System.currentTimeMillis() - castStart) + "ms, " + (System.currentTimeMillis() - castEnd) + " ms, attempts: " + i);
-          return results[1];
-        }
-
-        session.getLogger().warning("Spell Casted '" + effect.getSpell().getName() + "' but result for '" + results[0] + "'!");
-        session.delay(100);
-      }
-
-      return "";
-    }
-    else {
-      return "CAST_SUCCESS";
-    }
   }
 
   @Override
@@ -612,7 +596,9 @@ public class Me extends Spawn {
     List<Integer> healths = new ArrayList<>(6);
 
     for(Spawn member : session.getGroupMembers()) {
-      healths.add(member.getHitPointsPct());
+      if(member.isAlive()) {
+        healths.add(member.getHitPointsPct());
+      }
     }
 
     Collections.sort(healths);
@@ -774,11 +760,12 @@ public class Me extends Spawn {
 
   private static final Pattern COMMA = Pattern.compile(",");
 
-  //                                                                                  1         2        3         4        5        6         7         8         9         10        11        12       13       14        15        16                17                 18                                  20                                    22                23
-  //                                                                        Name      HP        Max HP   Mana      Max Mana End      Max End   Weight    XP        AAXP      AAsaved   AA        TargId   Combat   Invis     AutoAtk   Melee.Status      Memmed Spells      Buffs                               Short Buffs                           Extended Target   Auras            TargetBuffs
-  public static final Pattern PATTERN = Pattern.compile("#M [-0-9]+ [-0-9]+ [A-Za-z]+ ([-0-9]+) ([0-9]+) ([-0-9]+) ([0-9]+) ([0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([0-9]+) ([0-9]+) ([-0-9]+) ([-0-9]+) ((?:[A-Za-z]+ )+) M\\[([-0-9, ]+)\\] B\\[([-0-9 ]+)\\] D\\[([-0-9 ]+)\\] SB\\[([-0-9 ]+)\\] SD\\[([-0-9 ]+)\\] XT\\[([0-9 ]*)\\] A\\[([^\\]]*)\\].*");
+  //                                                                                  1         2        3         4        5        6         7         8         9         10        11        12       13       14        15        16                17                 18                19                                  21                                    23                24
+  //                                                                        Name      HP        Max HP   Mana      Max Mana End      Max End   Weight    XP        AAXP      AAsaved   AA        TargId   Combat   Invis     AutoAtk   Melee.Status      Memmed Spells      Aggro Info        Buffs                               Short Buffs                           Extended Target   Auras            TargetBuffs
+  public static final Pattern PATTERN = Pattern.compile("#M [-0-9]+ [-0-9]+ [A-Za-z]+ ([-0-9]+) ([0-9]+) ([-0-9]+) ([0-9]+) ([0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) ([0-9]+) ([0-9]+) ([-0-9]+) ([-0-9]+) ((?:[A-Za-z]+ )+) M\\[([-0-9, ]+)\\] A\\[([-0-9 ]+)\\] B\\[([-0-9 ]+)\\] D\\[([-0-9 ]+)\\] SB\\[([-0-9 ]+)\\] SD\\[([-0-9 ]+)\\] XT\\[([-0-9 ]*)\\] A\\[([^\\]]*)\\].*");
   // (?: TB\\[([0-9: ]+)\\])?  <-- sometimes result is TB]... bugged.
 
+  private int counter = 0;
   protected void updateMe(String info) {
     dmgHistory.add(0);
     Matcher matcher = PATTERN.matcher(info);
@@ -788,7 +775,7 @@ public class Me extends Spawn {
     if(matcher.matches()) {
       this.maxHitPoints = Integer.parseInt(matcher.group(2));  // Max hitpoints
       this.hitPoints = Integer.parseInt(matcher.group(1));  // Current hitpoints
-      updateHealth(maxHitPoints != 0 ? hitPoints * 100 / maxHitPoints : 100);
+      updateHealth(maxHitPoints != 0 ? hitPoints * 100 / maxHitPoints : 100, Source.DIRECT);
       this.mana = Integer.parseInt(matcher.group(3));  // Current mana
       this.maxMana = Integer.parseInt(matcher.group(4));  // Max mana
       updateMana(maxMana != 0 ? mana * 100 / maxMana : 100);
@@ -819,14 +806,19 @@ public class Me extends Spawn {
         this.gemReadyList[i] = gemState[1].equals("1");
       }
 
-      updateBuffs(matcher.group(18).trim() + " " + matcher.group(20).trim(), matcher.group(19).trim() + " " + matcher.group(21).trim());  // Buffs
+      if(counter-- == 0) {
+        //session.log(matcher.group(18) + " XT: " + matcher.group(23));
+        counter = 20;
+      }
+
+      updateBuffs(matcher.group(19).trim() + " " + matcher.group(21).trim(), matcher.group(20).trim() + " " + matcher.group(22).trim());  // Buffs
 
       extendedTargetIDs.clear();
 
 //      System.out.println(">" + matcher.group(22) + "<");
 
-      if(!matcher.group(22).isEmpty()) {
-        for(String id : matcher.group(22).split(" ")) {
+      if(!matcher.group(23).isEmpty()) {
+        for(String id : matcher.group(23).split(" ")) {
           extendedTargetIDs.add(Integer.parseInt(id));
   //        System.out.println(">" + id + "<");
         }
@@ -859,6 +851,14 @@ public class Me extends Spawn {
 //      }
 //    }
 //  }
+
+  public int getCastingID() {
+    return castingID;
+  }
+
+  public void updateCastingID(int castingID) {
+    this.castingID = castingID;
+  }
 
   public void updateLRUSlots(int slot) {
     lruSpellSlots.remove((Object)slot);
