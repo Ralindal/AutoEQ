@@ -1,7 +1,6 @@
 package autoeq.modules.buff;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -13,7 +12,6 @@ import autoeq.ThreadScoped;
 import autoeq.effects.Effect;
 import autoeq.effects.Effect.Type;
 import autoeq.eq.ActivateEffectCommand;
-import autoeq.eq.CombatState;
 import autoeq.eq.Command;
 import autoeq.eq.EverquestSession;
 import autoeq.eq.Me;
@@ -155,6 +153,23 @@ public class BuffModule implements Module {
 
             spellSetLoop:
             for(EffectSet effectSet : buffLine) {  // SpellSets are spell of the same "buff level", not necessarily same spell level.  Usually group + single target.
+              boolean willStack = true;
+              long millisLeft = 0;
+
+              for(Effect effect : effectSet.getEffects()) {
+                Spell spell = effect.getSpell();
+
+                if(!potentialTarget.willStack(spell)) {
+                  willStack = false;
+                }
+
+                long millis = potentialTarget.getSpellEffectManager(spell).getMillisLeft();
+
+                if(millis > millisLeft) {
+                  millisLeft = millis;
+                }
+              }
+
               for(Effect effect : effectSet.getEffects()) {  // All spells are from book
                 Spell spell = effect.getSpell();
 
@@ -166,10 +181,9 @@ public class BuffModule implements Module {
 //                  System.out.println(potentialTarget + " is a valid target for " + spell);
 
                   if(effect.getType() == Type.SONG) {
-                    SpellEffectManager manager = session.getMe().getSpellEffectManager(spell);
-                    long millisLeft = manager.getMillisLeft();
-
                     if(millisLeft <= 6000) { // One Tick
+                      SpellEffectManager manager = session.getMe().getSpellEffectManager(spell);
+
                       long currentTime = System.currentTimeMillis();
                       long timeSinceLastCast = (currentTime - manager.getLastCastMillis()) / 1000;
 
@@ -184,7 +198,7 @@ public class BuffModule implements Module {
                     }
                   }
                   else {
-                    if(potentialTarget.willStack(spell) && potentialTarget.getSpellEffectManager(spell).getMillisLeft() == 0) {
+                    if(willStack && millisLeft == 0) {
 //                     System.err.println(potentialTarget + " is a valid target for " + spell);
 
                       if(spell.getTargetType() == TargetType.SINGLE || spell.getTargetType() == TargetType.CORPSE) {
@@ -272,7 +286,7 @@ public class BuffModule implements Module {
     // If we get here, and no commands have yet been created, we'll need to mem something because
     // no spells were memmed or ready.
 
-    if(commands.size() == 0 && memorizeCommand != null && me.getCombatState() != CombatState.COMBAT) { // TODO while mounted memming is ok
+    if(commands.size() == 0 && memorizeCommand != null && !me.getMeleeStatus().contains("MELEE")) { // TODO while mounted memming is ok
       commands.add(memorizeCommand);
     }
 
