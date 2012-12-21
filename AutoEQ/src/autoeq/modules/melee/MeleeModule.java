@@ -33,7 +33,7 @@ public class MeleeModule implements Module {
   private final String validTargets;
   private final List<String> conditions;
 
-  private Spawn mainTarget;
+  private Spawn currentTarget;
   private int resetCount;
   private int range = 50;
   private boolean attacking;
@@ -69,7 +69,7 @@ public class MeleeModule implements Module {
     session.onZoned().call(new Listener() {
       @Override
       public void execute() {
-        mainTarget = null;
+        currentTarget = null;
         resetCount = 0;
         attacking = false;
       }
@@ -103,15 +103,16 @@ public class MeleeModule implements Module {
 
     if((!me.isMoving() || me.isBard()) && me.getType() == SpawnType.PC && active && session.tryLockMovement()) {
       try {
+        Spawn mainAssistTarget = targetModule.getMainAssistTarget();
         String meleeStatus = me.getMeleeStatus();
 
-        if(mainTarget != null) {
-          mainTarget = session.getSpawn(mainTarget.getId());   // Regets the target by ID from the actual spawns in the zone.  If spawn depopped, then this returns null.
+        if(currentTarget != null) {
+          currentTarget = session.getSpawn(currentTarget.getId());   // Regets the target by ID from the actual spawns in the zone.  If spawn depopped, then this returns null.
         }
 
-        if((mainTarget == null && (attacking || meleeStatus.contains("ENGAGED"))) || (mainTarget != null && (!mainTarget.isEnemy() || mainTarget.getDistance() > range))) {
+        if((currentTarget == null && (attacking || meleeStatus.contains("ENGAGED"))) || (currentTarget != null && (!currentTarget.isEnemy() || currentTarget.getDistance() > range))) {
           // session.echo("MELEE: Holding (was attacking = " + attacking + "; mainTarget = " + mainTarget + ")");
-          mainTarget = null;
+          currentTarget = null;
           session.doCommand("/melee reset");
 
           if(attacking) {
@@ -120,20 +121,18 @@ public class MeleeModule implements Module {
           }
         }
 
-        if(mainTarget == null) {
-          Spawn target = targetModule.getMainAssistTarget();
-
-          if(target != null && isValidTarget(target) && target.getDistance() < range) {
-            mainTarget = target;
+        if(currentTarget == null || !currentTarget.equals(mainAssistTarget)) {
+          if(mainAssistTarget != null && isValidTarget(mainAssistTarget) && mainAssistTarget.getDistance() < range) {
+            currentTarget = mainAssistTarget;
 //            session.echo("MELEE: Assisting on [ " + mainTarget.getName() + " ]");
           }
         }
         else {
-          if(!meleeStatus.contains("ENGAGED") || (!meleeStatus.contains("MELEE") && "WAR SHD PAL RNG BRD BST MNK BER CLR".contains(me.getClassShortName()))) {
+          if(!currentTarget.equals(me.getTarget()) || !meleeStatus.contains("ENGAGED") || (!meleeStatus.contains("MELEE") && "WAR SHD PAL RNG BRD BST MNK BER CLR".contains(me.getClassShortName()))) {
             session.doCommand("/stand");
-            session.doCommand("/target id " + mainTarget.getId());
+            session.doCommand("/target id " + currentTarget.getId());
 
-            if(session.delay(1000, "${Target.ID} == " + mainTarget.getId())) {
+            if(session.delay(1000, "${Target.ID} == " + currentTarget.getId())) {
               // session.echo("MELEE: Attacking [ " + mainTarget.getName() + " ] -- status = " + me.getMeleeStatus());
               session.doCommand("/killthis");
 //              session.delay(1000);
