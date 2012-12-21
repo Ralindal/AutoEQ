@@ -23,16 +23,20 @@ public class CommandLineParser {
 
         if(valueAnn != null) {
           String parameterName = valueAnn.name().isEmpty() ? field.getName() : valueAnn.name();
+          String hint = valueAnn.hint();
           String parameterPart = "";
 
           if(field.getType() == String.class) {
-            parameterPart = "<text>";
+            parameterPart = hint.isEmpty() ? "<text>" : "<" + hint + ">";
           }
           else if(field.getType() == int.class) {
-            parameterPart = "<number>";
+            parameterPart = hint.isEmpty() ? "<number>" : "<" + hint + ">";
           }
           else if(field.getType() == double.class) {
-            parameterPart = "<fraction>";
+            parameterPart = hint.isEmpty() ? "<fraction>" : "<" + hint + ">";
+          }
+          else if(field.getType() == boolean.class) {
+            parameterName = parameterName + "|no" + parameterName;
           }
           else if(field.getType().isEnum()) {
             for(Object constant : field.getType().getEnumConstants()) {
@@ -41,7 +45,7 @@ public class CommandLineParser {
               }
               parameterPart += constant;
             }
-            parameterPart = ("(" + parameterPart + ")").toLowerCase();
+            parameterPart = parameterPart.toLowerCase();
           }
           else {
             throw new RuntimeException("Unsupported type: " + field.getType());
@@ -51,6 +55,9 @@ public class CommandLineParser {
 
           if(valueAnn.defaultParameter()) {
             regex = "[" + parameterPart + "]";
+          }
+          else if(parameterPart.isEmpty()) {
+            regex = "[" + parameterName + "]";
           }
           else {
             regex = "[" + parameterName + " " + parameterPart + "]";
@@ -82,14 +89,14 @@ public class CommandLineParser {
           if(field.getType() == String.class) {
             parameterPart = "[^ ]+";
           }
-//          else if(field.getType() == boolean.class) {
-//            regex += "()";
-//          }
           else if(field.getType() == int.class) {
             parameterPart = "-?[0-9]+";
           }
           else if(field.getType() == double.class) {
             parameterPart = "-?[0-9]+(?:\\.[0-9]+)";
+          }
+          else if(field.getType() == boolean.class) {
+            parameterPart = "";
           }
           else if(field.getType().isEnum()) {
             for(Object constant : field.getType().getEnumConstants()) {
@@ -110,6 +117,9 @@ public class CommandLineParser {
             regex = "()(" + parameterPart + ")";
             parameterName = "";
           }
+          else if(parameterPart.isEmpty()) {
+            regex = "(" + parameterName  + "|no" + parameterName + ")()";
+          }
           else {
             regex = "(" + parameterName + ") (" + parameterPart + ")";
           }
@@ -126,10 +136,21 @@ public class CommandLineParser {
 
       while(matcher.find()) {
         for(int groupNo = 1; groupNo <= matcher.groupCount(); groupNo += 2) {
-          CommandLineParser.Group group = groups.get(matcher.group(groupNo));
+          String parameterName = matcher.group(groupNo);
+
+          CommandLineParser.Group group = groups.get(parameterName);
+
+          if(group == null && parameterName != null && parameterName.startsWith("no") && parameterName.length() > 2) {
+            group = groups.get(parameterName.substring(2));
+
+            if(group != null && group.field.getType() != boolean.class) {
+              group = null;
+            }
+          }
 
           if(group != null) {
             group.field.setAccessible(true);
+
             try {
               String value = matcher.group(groupNo + 1);
 
@@ -138,6 +159,9 @@ public class CommandLineParser {
               }
               else if(group.field.getType() == double.class) {
                 group.field.setDouble(configuration, Double.parseDouble(value));
+              }
+              else if(group.field.getType() == boolean.class) {
+                group.field.setBoolean(configuration, groups.get(parameterName) != null);
               }
               else if(group.field.getType().isEnum()) {
                 group.field.set(configuration, valueOfEnum(group.field.getType(), value));

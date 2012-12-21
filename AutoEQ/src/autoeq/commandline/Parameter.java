@@ -9,5 +9,6 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Parameter {
   String name() default "";
+  String hint() default "";
   boolean defaultParameter() default false;
 }
