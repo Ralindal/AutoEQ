@@ -18,6 +18,8 @@ import com.google.inject.Inject;
 
 @ThreadScoped
 public class RezWaitModule implements Module {
+  private static final Pattern REZ_TEXT = Pattern.compile("([A-Za-z]+) wants to cast ([A-Za-z ]+) \\(([0-9]+).+");
+
   private final EverquestSession session;
 
   private long deathMillis;
@@ -79,16 +81,26 @@ public class RezWaitModule implements Module {
        * Auto accept rez
        */
 
-      if(session.evaluate("${Window[ConfirmationDialogBox].Open}") && session.evaluate("${Window[ConfirmationDialogBox].Child[CD_TextOutput].Text.Find[percent) upon you.]}")) {
-        session.delay(1000);
-        session.doCommand("/nomodkey /notify ConfirmationDialogBox Yes_Button leftmouseup");
-        session.delay(1000);
+      if(session.evaluate("${Window[ConfirmationDialogBox].Open}")) {
+        String rezText = session.translate("${Window[ConfirmationDialogBox].Child[CD_TextOutput].Text}");
 
-        if(session.delay(2500, "${Window[RespawnWnd].Open}")) {
-          session.doCommand("/nomodkey /notify RespawnWnd RW_OptionsList listselect 2");
+        Matcher matcher = REZ_TEXT.matcher(rezText);
+
+        if(matcher.matches() && (session.getGroupMemberNames().contains(matcher.group(1)) || session.getBotNames().contains(matcher.group(1))) && Integer.parseInt(matcher.group(3)) >= 90) {
           session.delay(1000);
-          session.doCommand("/nomodkey /notify RespawnWnd RW_SelectButton leftmouseup");
+          session.doCommand("/nomodkey /notify ConfirmationDialogBox Yes_Button leftmouseup");
           session.delay(1000);
+
+          if(session.delay(2500, "${Window[RespawnWnd].Open}")) {
+            session.doCommand("/nomodkey /notify RespawnWnd RW_OptionsList listselect 2");
+            session.delay(1000);
+            session.doCommand("/nomodkey /notify RespawnWnd RW_SelectButton leftmouseup");
+            session.delay(1000);
+          }
+        }
+        else {
+          session.log("Ignoring rez: " + rezText);
+          session.echo("Ignoring rez: " + rezText);
         }
       }
 
