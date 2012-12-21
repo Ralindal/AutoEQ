@@ -8,6 +8,7 @@ public class ItemEffect implements Effect {
   private final String name;
   private final Spell spell;
   private final int agro;
+  private final int castTime;
 
   private boolean ready;
 
@@ -16,12 +17,19 @@ public class ItemEffect implements Effect {
     this.spell = spell;
     this.agro = agro;
 
+    this.castTime = (int)(Double.parseDouble(session.translate("${FindItem[=" + name + "].CastTime}")) * 1000);
+
     session.registerExpression("${Cast.Ready[" + name + "|item]}", new ExpressionListener() {
       @Override
       public void stateUpdated(String result) {
         ready = result.equals("TRUE");
       }
     });
+  }
+
+  @Override
+  public int getCastTime() {
+    return castTime;
   }
 
   @Override
@@ -45,7 +53,7 @@ public class ItemEffect implements Effect {
 
   @Override
   public String getCastingLine() {
-    return "/nomod /casting \"" + name + "\" item";
+    return "/nomodkey /itemnotify ${FindItem[=" + name + "].InvSlot} rightmouseup";
   }
 
   @Override

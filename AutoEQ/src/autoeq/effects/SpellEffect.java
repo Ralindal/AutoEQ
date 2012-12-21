@@ -17,6 +17,7 @@ public class SpellEffect implements Effect {
     MAX_GOM_LEVEL.put("Gift of Amazing Exquisite Radiant Mana", 85);
     MAX_GOM_LEVEL.put("Gift of Dreamlike Exquisite Radiant Mana", 90);
     MAX_GOM_LEVEL.put("Gift of Ascendant Exquisite Radiant Mana", 95);
+    MAX_GOM_LEVEL.put("Gift of Phantasmal Exquisite Radiant Mana", 100);
   }
 
   private final EverquestSession session;
@@ -35,6 +36,11 @@ public class SpellEffect implements Effect {
   }
 
   @Override
+  public int getCastTime() {
+    return spell.getCastTime();
+  }
+
+  @Override
   public Type getType() {
     return Type.SPELL;
   }
@@ -46,7 +52,7 @@ public class SpellEffect implements Effect {
 
   @Override
   public String getCastingLine() {
-    return "/casting " + spell.getId() + " gem" + session.getMe().getGem(spell) + " -maxtries|1";
+    return "/cast " + session.getMe().getGem(spell);
   }
 
   @Override

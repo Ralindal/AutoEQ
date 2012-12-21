@@ -34,6 +34,11 @@ public class AlternateAbilityEffect implements Effect {
   }
 
   @Override
+  public int getCastTime() {
+    return spell.getCastTime();
+  }
+
+  @Override
   public Type getType() {
     return Type.ABILITY;
   }
@@ -45,7 +50,7 @@ public class AlternateAbilityEffect implements Effect {
 
   @Override
   public String getCastingLine() {
-    return "/casting \"" + name + "\" alt";
+    return "/alt activate ${Me.AltAbility[" + name + "].ID}";
   }
 
   @Override

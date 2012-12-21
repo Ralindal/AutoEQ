@@ -10,12 +10,12 @@ public class DisciplineEffect implements Effect {
   private final int agro;
 
   private boolean ready;
-  
+
   public DisciplineEffect(EverquestSession session, String name, Spell spell, int agro) {
     this.name = name;
     this.spell = spell;
     this.agro = agro;
-    
+
     session.registerExpression("${Me.CombatAbilityReady[" + spell.getName() + "]}", new ExpressionListener() {
       @Override
       public void stateUpdated(String result) {
@@ -30,15 +30,20 @@ public class DisciplineEffect implements Effect {
   }
 
   @Override
+  public int getCastTime() {
+    return 0;
+  }
+
+  @Override
   public Type getType() {
     return Type.DISCIPLINE;
   }
-  
+
   @Override
   public int getAgro() {
     return agro;
   }
-  
+
   @Override
   public String getCastingLine() {
     return "/nomod /doability \"" + spell.getName() + "\"";
@@ -48,7 +53,7 @@ public class DisciplineEffect implements Effect {
   public boolean isReady() {
     return ready;
   }
-  
+
   @Override
   public String toString() {
     return name;

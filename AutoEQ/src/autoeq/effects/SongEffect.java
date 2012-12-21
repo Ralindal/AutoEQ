@@ -7,16 +7,21 @@ public class SongEffect implements Effect {
   private final EverquestSession session;
   private final Spell spell;
   private final int agro;
-  
+
   public SongEffect(EverquestSession session, Spell spell, int agro) {
     this.session = session;
     this.spell = spell;
     this.agro = agro;
   }
-  
+
   @Override
   public Spell getSpell() {
     return spell;
+  }
+
+  @Override
+  public int getCastTime() {
+    return spell.getCastTime();
   }
 
   @Override
@@ -38,7 +43,7 @@ public class SongEffect implements Effect {
   public boolean isReady() {
     return session.getMe().isSpellReady(spell);
   }
-  
+
   @Override
   public String toString() {
     return spell.getName();
