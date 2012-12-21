@@ -18,7 +18,6 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
@@ -46,6 +45,7 @@ import autoeq.effects.Effect;
 import autoeq.effects.ItemEffect;
 import autoeq.effects.SongEffect;
 import autoeq.effects.SpellEffect;
+import autoeq.eq.Spawn.Source;
 import autoeq.ini.Ini2;
 import autoeq.ini.Section;
 import autoeq.modules.pull.MoveModule;
@@ -80,7 +80,6 @@ public class EverquestSession {
   private boolean zoning = true;
   private Logger logger;
 
-  private String gameState = "INGAME";  // INGAME, CHARSELECT
   private Module activeModule;
   private volatile boolean ioThreadActive = true;
   private boolean debug = false;
@@ -99,12 +98,8 @@ public class EverquestSession {
     BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
     PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream()));
 
-    System.out.println("Logging in");
-
     while(!(reader.read() == ':')) {
     }
-
-    System.out.println("Sending username");
 
     Thread.sleep(300);
 
@@ -116,12 +111,8 @@ public class EverquestSession {
 
     Thread.sleep(300);
 
-    System.out.println("Sending password");
-
     writer.println(password);
     writer.flush();
-
-    System.out.println(">Waiting for lines");
 
     if(!reader.readLine().startsWith("Succe")) {
       throw new RuntimeException("Unable to connect, no welcome mesage");
@@ -134,13 +125,6 @@ public class EverquestSession {
 
     //onFinishedZoning();
     sessionName = "EverquestSession(" + port + ")";
-
-    registerExpression("${MacroQuest.GameState}", new ExpressionListener() {
-      @Override
-      public void stateUpdated(String result) {
-        gameState = result;
-      }
-    });
   }
 
   public void addModule(Module module) {
@@ -220,10 +204,6 @@ public class EverquestSession {
     return zoneId;
   }
 
-  public String getGameState() {
-    return gameState;
-  }
-
   public void setCastLockOut(long ms) {
     castLockEndMillis = System.currentTimeMillis() + ms;
   }
@@ -231,7 +211,6 @@ public class EverquestSession {
   private final Map<String, UserCommandWrapper> userCommands = new HashMap<>();
 
   public void addUserCommand(String name, Pattern parameters, String helpText, UserCommand command) {
-    System.out.println("Added user command : " + name);
     userCommands.put(name, new UserCommandWrapper(command, parameters, helpText));
   }
 
@@ -263,7 +242,9 @@ public class EverquestSession {
 
   public void pulse(Collection<BotUpdateEvent> lastBotUpdateEvents) {
     try {
-      if(getGameState().equals("INGAME")) {
+//      System.out.println(this + " : " + getGameState() + " : sc = " + spawns.size() + ": zoneId=" + zoneId + "; zoning=" + zoning);
+
+      if(!zoning) {
 
         /*
          * Update bot information for this session
@@ -290,10 +271,24 @@ public class EverquestSession {
               botSpawn.updateBuffs(buffIds);
             }
 
-            botSpawn.updateHealth(botUpdateEvent.getHealthPct());
+            botSpawn.updateHealth(botUpdateEvent.getHealthPct(), Source.BOT);
             botSpawn.updateMana(botUpdateEvent.getManaPct());
             botSpawn.updateEndurance(botUpdateEvent.getEndurancePct());
-            botSpawn.updateTarget(botUpdateEvent.getTargetId());
+
+            Spawn botTarget = botUpdateEvent.getTarget();
+
+            if(botTarget == null) {
+              botSpawn.updateTarget(0);
+            }
+            else {
+              botSpawn.updateTarget(botTarget.getId());
+
+              Spawn target = getSpawn(botTarget.getId());
+
+              if(target != null) {
+                target.updateHealth(botTarget.getHitPointsPct(), Source.BOT);
+              }
+            }
           }
         }
 
@@ -375,7 +370,7 @@ public class EverquestSession {
 //          }
 //        });
 
-        if(getMe() != null) {
+        if(!zoning && getMe() != null) {
           List<Command> commands = new ArrayList<>();
 
           getMe().unlockAllSpellSlots();
@@ -473,11 +468,13 @@ public class EverquestSession {
 
   private boolean processDataBursts() {
     boolean fullUpdate = false;
+    boolean zoning = false;
 
     while(unprocessedDataBurstCount > 0) {
       List<String> dataBurst = new ArrayList<>();
       boolean containsAllSpawns = false;
-      boolean zoning = false;
+
+      zoning = false;
 
       startTimer("PDB1 collect burst");
 
@@ -491,7 +488,7 @@ public class EverquestSession {
               containsAllSpawns = true;
             }
             if(line.startsWith("#Z")) {
-              // System.err.println("-------ZONING-------");
+             // System.err.println("-------ZONING-------" + this);
               zoning = true;
             }
             dataBurst.add(line);
@@ -629,36 +626,38 @@ public class EverquestSession {
 
         groupMemberNames.add(getMe().getName());
 
-        for(String line : dataBurst) {
-          if(line.startsWith("#B ")) {
-            Matcher matcher = BOT_PATTERN.matcher(line);
+        if(0 == 1) {
+          for(String line : dataBurst) {
+            if(line.startsWith("#B ")) {
+              Matcher matcher = BOT_PATTERN.matcher(line);
 
-            if(matcher.matches()) {
-  //            botNames.add(matcher.group(1));
-  //              System.err.println(line);
-              Spawn spawn = getSpawn(matcher.group(1));
+              if(matcher.matches()) {
+    //            botNames.add(matcher.group(1));
+    //              System.err.println(line);
+                Spawn spawn = getSpawn(matcher.group(1));
 
-              if(spawn != null) {  // Bot is in the zone
-                int currentHPs = Integer.parseInt(matcher.group(2));
-                int maxHPs = Integer.parseInt(matcher.group(3));
-//                int currentMana = Integer.parseInt(matcher.group(4));
-//                int maxMana = Integer.parseInt(matcher.group(5));
+                if(spawn != null) {  // Bot is in the zone
+                  int currentHPs = Integer.parseInt(matcher.group(2));
+                  int maxHPs = Integer.parseInt(matcher.group(3));
+  //                int currentMana = Integer.parseInt(matcher.group(4));
+  //                int maxMana = Integer.parseInt(matcher.group(5));
 
-                if(!spawn.isMe()) {
-                  spawn.updateHealth(maxHPs == 0 ? 100 : currentHPs * 100 / maxHPs);
-                }
+                  if(!spawn.isMe()) {
+                    spawn.updateHealth(maxHPs == 0 ? 100 : currentHPs * 100 / maxHPs, Source.BOT);
+                  }
 
-                spawn.updateBuffs(matcher.group(8).trim() + " " + matcher.group(10).trim());
+                  spawn.updateBuffs(matcher.group(8).trim() + " " + matcher.group(10).trim());
 
-                int targetId = Integer.parseInt(matcher.group(6));
-                int targetPct = Integer.parseInt(matcher.group(7));
+                  int targetId = Integer.parseInt(matcher.group(6));
+                  int targetPct = Integer.parseInt(matcher.group(7));
 
-                spawn.updateTarget(targetId);
+                  spawn.updateTarget(targetId);
 
-                Spawn target = getSpawn(targetId);
+                  Spawn target = getSpawn(targetId);
 
-                if(target != null && !target.isBot() && !target.isMe() && !target.isGroupMember()) {
-                  target.updateHealth(targetPct);
+                  if(target != null && !target.isBot() && !target.isMe() && !target.isGroupMember()) {
+                    target.updateHealth(targetPct, Source.BOT);
+                  }
                 }
               }
             }
@@ -691,27 +690,31 @@ public class EverquestSession {
       }
     }
 
-    Me me = getMe();
+    this.zoning = zoning;
 
-    if(me != null && botUpdateHandler != null) {
-      Map<Integer, Long> spellDurations = new HashMap<>();
+    if(!zoning) {
+      Me me = getMe();
 
-      for(Spell spell : me.getSpellEffects()) {
-        SpellEffectManager manager = me.getSpellEffectManager(spell);
+      if(me != null && botUpdateHandler != null) {
+        Map<Integer, Long> spellDurations = new HashMap<>();
 
-        long timeLeft = manager.getMillisLeft();
+        for(Spell spell : me.getSpellEffects()) {
+          SpellEffectManager manager = me.getSpellEffectManager(spell);
 
-        if(timeLeft > 0) {
-          spellDurations.put(spell.getId(), timeLeft);
+          long timeLeft = manager.getMillisLeft();
+
+          if(timeLeft > 0) {
+            spellDurations.put(spell.getId(), timeLeft);
+          }
         }
-      }
 
-      botUpdateHandler.handle(new BotUpdateEvent(me.getName(), getZoneId(), me.getId(), spellDurations, me.getHitPointsPct(), me.getManaPct(), me.getEndurancePct(), me.getTarget() == null ? 0 : me.getTarget().getId()));
+        botUpdateHandler.handle(new BotUpdateEvent(me.getName(), getZoneId(), me.getId(), spellDurations, me.getHitPointsPct(), me.getManaPct(), me.getEndurancePct(), me.getTarget()));
 
-      Spawn pet = me.getPet();
+        Spawn pet = me.getPet();
 
-      if(pet != null) {
-        botUpdateHandler.handle(new BotUpdateEvent(pet.getName(), getZoneId(), pet.getId(), null, pet.getHitPointsPct(), pet.getManaPct(), pet.getEndurancePct(), pet.getTarget() == null ? 0 : pet.getTarget().getId()));
+        if(pet != null) {
+          botUpdateHandler.handle(new BotUpdateEvent(pet.getName(), getZoneId(), pet.getId(), null, pet.getHitPointsPct(), pet.getManaPct(), pet.getEndurancePct(), pet.getTarget()));
+        }
       }
     }
 
@@ -944,9 +947,16 @@ public class EverquestSession {
     return onZoned.getInterface();
   }
 
+  private final Map<Integer, String> priorityTargets = new HashMap<>();
   private final Map<Integer, String> unmezzables = new HashMap<>();
   private final Map<Integer, String> falseNameds = new HashMap<>();
   private final Map<Integer, String> ignoreds = new HashMap<>();
+
+  public String getPriorityTargets() {
+    String priorityTargets = this.priorityTargets.get(getZoneId());
+
+    return priorityTargets == null ? "" : priorityTargets;
+  }
 
   public String getUnmezzables() {
     String unmezzables = this.unmezzables.get(getZoneId());
@@ -977,10 +987,14 @@ public class EverquestSession {
         if(section.getName().startsWith("Zone-")) {
           int zoneId = Integer.parseInt(section.get("ID"));
 
+          String priorityTargets = section.get("PriorityTargets");
           String unmezzables = section.get("Unmezzables");
           String falseNameds = section.get("FalseNameds");
           String ignoreds = section.get("Ignoreds");
 
+          if(priorityTargets != null) {
+            this.priorityTargets.put(zoneId, priorityTargets);
+          }
           if(unmezzables != null) {
             this.unmezzables.put(zoneId, unmezzables);
           }
@@ -1037,6 +1051,7 @@ public class EverquestSession {
     expressionListeners.clear();
     effects.clear();
     onZoned.clear();
+    spawns.clear();
 
     addUserCommand("modules", Pattern.compile("(load|unload)"), "(load|unload)", new UserCommand() {
       @Override
@@ -1157,6 +1172,17 @@ public class EverquestSession {
     else {
       System.err.println("No Modules section in global.ini");
     }
+
+    registerExpression("${Me.Casting.ID}", new ExpressionListener() {
+      @Override
+      public void stateUpdated(String result) {
+        Me me = getMe();
+
+        if(me != null) {
+          me.updateCastingID(result.matches("[0-9]+") ? Integer.parseInt(result) : 0);
+        }
+      }
+    });
   }
 
   private void createLogger() {

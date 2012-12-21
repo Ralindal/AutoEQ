@@ -2,11 +2,13 @@ package autoeq;
 
 import java.util.Map;
 
+import autoeq.eq.Spawn;
+
 public class BotUpdateEvent extends Event {
   private final String name;
   private final Map<Integer, Long> spellDurations;
   private final int healthPct;
-  private final int targetId;
+  private final Spawn target;
   private final int spawnId;
   private final int manaPct;
   private final int endurancePct;
@@ -14,7 +16,7 @@ public class BotUpdateEvent extends Event {
 
   private final long eventTime;
 
-  public BotUpdateEvent(String name, int zoneId, int spawnId, Map<Integer, Long> spellDurations, int healthPct, int manaPct, int endurancePct, int targetId) {
+  public BotUpdateEvent(String name, int zoneId, int spawnId, Map<Integer, Long> spellDurations, int healthPct, int manaPct, int endurancePct, Spawn target) {
     this.eventTime = System.currentTimeMillis();
     this.name = name;
     this.zoneId = zoneId;
@@ -23,7 +25,7 @@ public class BotUpdateEvent extends Event {
     this.healthPct = healthPct;
     this.manaPct = manaPct;
     this.endurancePct = endurancePct;
-    this.targetId = targetId;
+    this.target = target;
   }
 
   public long getEventAge() {
@@ -58,7 +60,7 @@ public class BotUpdateEvent extends Event {
     return endurancePct;
   }
 
-  public int getTargetId() {
-    return targetId;
+  public Spawn getTarget() {
+    return target;
   }
 }
