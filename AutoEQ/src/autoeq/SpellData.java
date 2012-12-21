@@ -1,9 +1,14 @@
 package autoeq;
 
+import java.util.HashSet;
+import java.util.Set;
+
 import autoeq.DebuffCounter.Type;
 import autoeq.eq.ResistType;
 
 public class SpellData {
+  public static final Set<Integer> NON_STACKING_ATTRIBS = new HashSet<>();
+
   public static final int ATTRIB_DAMAGE = 0;
   public static final int ATTRIB_MOVEMENT = 3;
   public static final int ATTRIB_SLOW = 11;
@@ -12,10 +17,28 @@ public class SpellData {
   public static final int ATTRIB_INITIAL_DAMAGE = 79;
   public static final int ATTRIB_HEAL_OVER_TIME = 100;
   public static final int ATTRIB_MOUNT = 113;
+  public static final int ATTRIB_SPELL_HASTE = 127;
+  public static final int ATTRIB_LIMIT_MAX_LEVEL = 134;
+  public static final int ATTRIB_LIMIT_EFFECT = 137;
+  public static final int ATTRIB_LIMIT_SPELL = 139;
+  public static final int ATTRIB_LIMIT_MIN_CAST_TIME = 143;
   public static final int ATTRIB_SHRINK = 298;
+  public static final int ATTRIB_LIMIT_EXCLUDE_COMBAT_SKILLS = 311;
   public static final int ATTRIB_AUTO_CAST = 374;
   public static final int ATTRIB_TWIN_CAST = 399;
   public static final int ATTRIB_MANA_HP_DRAIN = 401;  // base2 determines hp drain
+
+  static {
+    NON_STACKING_ATTRIBS.add(254);  // placeholder I think
+    NON_STACKING_ATTRIBS.add(57);   // ?
+    NON_STACKING_ATTRIBS.add(ATTRIB_LIMIT_MAX_LEVEL);
+    NON_STACKING_ATTRIBS.add(ATTRIB_LIMIT_EFFECT);
+    NON_STACKING_ATTRIBS.add(ATTRIB_LIMIT_SPELL);
+    NON_STACKING_ATTRIBS.add(ATTRIB_LIMIT_MIN_CAST_TIME);
+    NON_STACKING_ATTRIBS.add(ATTRIB_LIMIT_EXCLUDE_COMBAT_SKILLS);
+    NON_STACKING_ATTRIBS.add(ATTRIB_LIMIT_EXCLUDE_COMBAT_SKILLS);
+    NON_STACKING_ATTRIBS.add(ATTRIB_SPELL_HASTE);
+  }
 
   private final int id;
   private final String name;
@@ -128,7 +151,7 @@ public class SpellData {
   /**
    * Returns <code>true</code> if this spell blocks the given spell.
    */
-  private boolean blocks(SpellData sd) {
+  public boolean blocks(SpellData sd) {
     for(int i = 0; i < 12; i++) {
       if(attrib[i] == 148 || attrib[i] == 149) {
         int slot = calc[i] - 200 - 1;
@@ -167,7 +190,7 @@ public class SpellData {
     }
 
     for(int i = 0; i < 12; i++) {
-      if(sd.attrib[i] == attrib[i] && !(attrib[i] == 254 || sd.attrib[i] == 254) && !(attrib[i] == 57 && sd.attrib[i] == 57) && !(attrib[i] == 311 && sd.attrib[i] == 311)) {
+      if(sd.attrib[i] == attrib[i] && !NON_STACKING_ATTRIBS.contains(attrib[i])) {
         if(isStackData(i) && sd.isStackData(i)) {
           return false;
         }
