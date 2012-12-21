@@ -147,7 +147,10 @@ public class Spawn {
         return SpawnType.UNTARGETABLE;
       }
 
-      return SpawnType.NPC;
+      if(name.endsWith("s corpse")) {
+        System.err.println("Warning, wrong detected NPC: " + name);
+      }
+      return name.endsWith("'s corpse") ? SpawnType.NPC_CORPSE : SpawnType.NPC;
     case 2:
     case 3:
       return deity == 0 ? SpawnType.NPC_CORPSE : SpawnType.PC_CORPSE;
@@ -248,23 +251,35 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
 
   /**
    * Name is somewhat poorly chosen.  This function returns false if the exact buf is already on the target since
-   * technically this "doesn't stack" (or is atleast pointless to cast).
+   * technically this "doesn't stack" (or is atleast pointless to cast).  If however an auto casted spell is missing
+   * while another is present, then this function will return that it stcks.
    */
   public boolean willStack(Spell spell) {
     if(spell.getDuration() > 0) {
       Set<Spell> buffs = getSpellEffects();
 
       for(Spell buff : buffs) {
-        if(buff.equals(spell)) {
+        if(buff.equals(spell) || !spell.willStack(buff)) {
           return false;
         }
       }
 
-      for(Spell buff : buffs) {
-        if(!spell.willStack(buff)) {
-//          System.err.println(spell + " not stack with " + buff);
-          return false;
+      int sameAutoCastedSpellCount = 0;
+
+      for(Spell autoCastedSpell : spell.getAutoCastedSpells()) {
+        for(Spell buff : buffs) {
+          if(!autoCastedSpell.willStack(buff)) {
+            return false;
+          }
+
+          if(buff.equals(autoCastedSpell)) {
+            sameAutoCastedSpellCount++;
+          }
         }
+      }
+
+      if(sameAutoCastedSpellCount > 0 && sameAutoCastedSpellCount == spell.getAutoCastedSpells().size()) {
+        return false;
       }
     }
 
@@ -504,6 +519,10 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     String falseNameds = session.getFalseNameds();
 
     return fullName.startsWith("#") && !name.matches(falseNameds);
+  }
+
+  public boolean isPriorityTarget() {
+    return name.matches(session.getPriorityTargets());
   }
 
   public boolean isUnmezzable() {
@@ -875,15 +894,39 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     previousHitPointsPct = hitPointsPct;
   }
 
-  public void updateHealth(int hitPointsPct) {
-    if(hitPointsPct > 100) {
-      this.hitPointsPct = 100;
+  private Source healthSource = Source.SPAWN_LIST;
+  private long healthLastUpdateMillis;
+
+  public enum Source {
+    SPAWN_LIST(0),
+    BOT(1),
+    DIRECT(2);
+
+    private final int priority;
+
+    Source(int priority) {
+      this.priority = priority;
     }
-    else if(hitPointsPct < 0) {
-      this.hitPointsPct = 0;
+
+    public int getPriority() {
+      return priority;
     }
-    else {
-      this.hitPointsPct = hitPointsPct;
+  }
+
+  public void updateHealth(int hitPointsPct, Source source) {
+    if(healthSource.getPriority() <= source.getPriority() || healthLastUpdateMillis + 3000 < System.currentTimeMillis()) {
+      healthSource = source;
+      healthLastUpdateMillis = System.currentTimeMillis();
+
+      if(hitPointsPct > 100) {
+        this.hitPointsPct = 100;
+      }
+      else if(hitPointsPct < 0) {
+        this.hitPointsPct = 0;
+      }
+      else {
+        this.hitPointsPct = hitPointsPct;
+      }
     }
   }
 
@@ -1011,6 +1054,10 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
     }
   }
 
+  public boolean isExtendedTarget() {
+    return session.getMe().isExtendedTarget(this);
+  }
+
   private final TreeMap<Integer, Long> healthTimes = new TreeMap<>();
 
   private static final Pattern NEG_10000 = Pattern.compile("-1\\.#J");
@@ -1040,7 +1087,8 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
 
       if(!isMe() && !isBot()) {
         // Health/Mana/End returned for Me is actual hitpoints, not a percentage
-        updateHealth(Integer.parseInt(matcher.group(2)));
+
+        updateHealth(Integer.parseInt(matcher.group(2)), isExtendedTarget() || this == session.getMe().getTarget() ? Source.DIRECT : Source.SPAWN_LIST);
         updateMana(Integer.parseInt(matcher.group(3)));
         updateEndurance(Integer.parseInt(matcher.group(4)));
       }
@@ -1104,31 +1152,6 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
   public SpellEffectManager getSpellEffectManager(Spell spell) {
     return getSpellEffectManager(spell.getId());
   }
-
-//  public void addSpellEffect(Spell spell) {
-//    if(session.getMe().isBard() && spell.getDuration() <= 30) {
-//      System.err.println("Adding timer for " + spell + " : " + spell.getDuration());
-//      spellEffectTimers.put(spell.getId(), new SpellEffectTimer(System.currentTimeMillis() + spell.getDuration() * 1000, spell.getId(), true));
-//    }
-//    else {
-//    // TODO +6000 is for Promised Renewal... need a way to make sure it has triggered before refreshing.
-//      spellEffectTimers.put(spell.getId(), new SpellEffectTimer(System.currentTimeMillis() + spell.getDuration() * 1000 + 6000, spell.getId(), false));
-//    }
-//  }
-//
-//  public void addSpellEffect(Spell spell, int millis) {
-//    spellEffectTimers.put(spell.getId(), new SpellEffectTimer(System.currentTimeMillis() + millis, spell.getId(), true));
-//  }
-//
-//  public long getDuration(Spell spell) {
-//    SpellEffectTimer spellEffectTimer = spellEffectTimers.get(spell.getId());
-//
-//    if(spellEffectTimer != null && !spellEffectTimer.isExpired()) {
-//      return spellEffectTimer.getTimeLeft();
-//    }
-//    return 0;
-//  }
-
 
   public SpellEffectManager getActiveEffect(EffectType effectType) {
     SpellEffectManager bestEffectManager = null;
@@ -1215,19 +1238,4 @@ static inline eSpawnType GetSpawnType(PSPAWNINFO pSpawn)
   public String toString() {
     return "Spawn(\"" + name + "\", " + id + ", range " + (int)getDistance() + ", ttl " + getTimeToLive() + "(" + getMobTimeToLive() + "))";
   }
-
-//  private static class HealthDataPoint {
-//    private final long millis;
-//    private final int hp;
-//
-//    public HealthDataPoint(int hp) {
-//      this.millis = System.currentTimeMillis();
-//      this.hp = hp;
-//    }
-//
-//    @Override
-//    public String toString() {
-//      return "HDP[" + hp + "]";
-//    }
-//  }
 }
