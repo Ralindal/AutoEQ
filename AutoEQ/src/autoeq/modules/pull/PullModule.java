@@ -365,7 +365,7 @@ public class PullModule implements Module {
         session.echo("PULL: Selected path " + bestPathNo + " with density " + bestDensity);
       }
 
-      return new Pair<List<Node>, List<Spawn>>(bestPath, new ArrayList<>(bestSpawns));
+      return bestSpawns == null ? null : new Pair<List<Node>, List<Spawn>>(bestPath, new ArrayList<>(bestSpawns));
     }
 
     return null;
