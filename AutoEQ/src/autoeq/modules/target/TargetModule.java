@@ -24,6 +24,8 @@ import com.google.inject.Inject;
 
 @ThreadScoped
 public class TargetModule implements Module {
+  private static final double TARGET_OVERRIDE_SCORE = 10000;
+
   private final EverquestSession session;
 
   private final String validTargets;
@@ -31,7 +33,6 @@ public class TargetModule implements Module {
   private final List<String> assistConditions;
 
   private TargetConf conf = new TargetConf();
-  private boolean attacking;
   private String[] names;
 
   private final CampModule campModule;
@@ -135,69 +136,13 @@ public class TargetModule implements Module {
           bestTarget = null;
         }
 
-        if(bestTarget == null) {
-          // session.echo("TARGET: Mode = " + targetSelection + ":" + this);
+        Spawn currentBestTarget = getTargetBasedOnMode(bestTarget, me, x, y);
 
-          if(conf.getMode() == Mode.OLDEST) {
-            for(Spawn target : session.getSpawns()) {
-              if(!target.isIgnored() && Math.abs(target.getZ() - me.getZ()) < 30 && target.getDistance(x, y) < conf.getRange()) {
-                if(isValidTarget(target) && (bestTarget == null || target.getCreationDate().before(bestTarget.getCreationDate()))) {
-                  bestTarget = target;
-                }
-              }
-            }
+        if(bestTarget == null || !bestTarget.equals(currentBestTarget)) {
+          bestTarget = currentBestTarget;
 
-            if(bestTarget != null) {
-              session.echo("TARGET: Targetting Oldest [ " + bestTarget.getName() + " ]. " + (System.currentTimeMillis() - bestTarget.getCreationDate().getTime()) / 1000 + "s old.  attacking = " + attacking + " ; melee status = " + me.getMeleeStatus());
-            }
-          }
-          else if(conf.getMode() == Mode.HIGHEST_LEVEL) {
-            for(Spawn target : session.getSpawns()) {
-              if((!target.isIgnored() && Math.abs(target.getZ() - me.getZ()) < 30 && target.getDistance(x, y) < conf.getRange()) || me.isExtendedTarget(target)) {
-                if(isValidTarget(target) && (bestTarget == null || target.getLevel() > bestTarget.getLevel())) {
-                  bestTarget = target;
-                }
-              }
-            }
-
-            if(bestTarget != null) {
-              session.echo("TARGET: Targetting Highest [ " + bestTarget.getName() + " ].  Level " + bestTarget.getLevel() + ".");
-            }
-          }
-          else if(conf.getMode() == Mode.SMART) {
-            int bestScore = 0;
-
-            for(Spawn target : session.getSpawns()) {
-              if((!target.isIgnored() && Math.abs(target.getZ() - me.getZ()) < 30 && target.getDistance(x, y) < conf.getRange()) || me.isExtendedTarget(target)) {
-                // First unmezzables, then named, then by level
-                int score = target.getLevel() + (target.isUnmezzable() ? 1000 : 0) + (target.isNamedMob() ? 500 : 0);
-
-                if(isValidTarget(target) && (bestTarget == null || score > bestScore)) {
-                  bestTarget = target;
-                  bestScore = score;
-                }
-              }
-            }
-
-            if(bestTarget != null) {
-              session.echo("TARGET: Targetting [ " + bestTarget.getName() + " ].  Level " + bestTarget.getLevel() + (bestTarget.isUnmezzable() ? ", Unmezzable" : "") + (bestTarget.isNamedMob() ? ", Named" : "") + ".");
-            }
-          }
-          else if(conf.getMode() == Mode.NEAREST) {  // nearest
-            for(Spawn target : session.getSpawns()) {
-              if(!target.isIgnored() && Math.abs(target.getZ() - me.getZ()) < 30 && target.getDistance(x, y) < conf.getRange()) {
-                if(isValidTarget(target) && (bestTarget == null || bestTarget.getDistance(x, y) > target.getDistance(x, y))) {
-                  bestTarget = target;
-                }
-              }
-            }
-
-            if(bestTarget != null) {
-              session.echo("TARGET: Targetting Nearest [ " + bestTarget.getName() + " ].  Level " + bestTarget.getLevel() + ".");
-            }
-          }
-          else {
-            throw new IllegalStateException("Unknown targetSelection: " + conf.getMode());
+          if(bestTarget != null) {
+            session.echo("TARGET: Targetting [ " + bestTarget.getName() + " ].  Level " + bestTarget.getLevel() + (bestTarget.isUnmezzable() ? ", Unmezzable" : "") + (bestTarget.isNamedMob() ? ", Named" : "") + ".");
           }
 
           currentTarget = bestTarget;
@@ -214,6 +159,78 @@ public class TargetModule implements Module {
     }
 
     return bestTarget;
+  }
+
+  protected Spawn getTargetBasedOnMode(Spawn currentTarget, Me me, float x, float y) {
+    Spawn bestTarget = currentTarget;
+    double currentTargetScore = getScore(currentTarget, me, x, y);
+    double bestScore = Double.NEGATIVE_INFINITY;
+
+    for(Spawn target : session.getSpawns()) {
+      double score = getScore(target, me, x, y);
+
+      if(score - currentTargetScore >= TARGET_OVERRIDE_SCORE && score > bestScore) {
+        bestTarget = target;
+        bestScore = score;
+      }
+    }
+
+    return bestTarget;
+  }
+
+  private double getScore(Spawn target, Me me, float x, float y) {
+    double score = Double.NEGATIVE_INFINITY;  // higher == better
+
+    /*
+     * Scoring works by assigning a value to a spawn.  If the target scores TARGET_OVERRIDE_SCORE points better, than it is preferred even over the current target.
+     * By returning scores that are within TARGET_OVERRIDE_SCORE points of each other, the algorithm will always stick with the current target over any new target.  By
+     * returning scores that are always TARGET_OVERRIDE_SCORE points or more distant from each other, the algorithm will always switch to the most desirable target.
+     */
+
+    if(target != null) {
+      if((!target.isIgnored() && Math.abs(target.getZ() - me.getZ()) < 30 && target.getDistance(x, y) < conf.getRange()) || me.isExtendedTarget(target)) {
+        if(isValidTarget(target)) {
+          if(conf.getMode() == Mode.OLDEST) {
+
+            /*
+             * Always favor oldest target.
+             */
+
+            return -target.getCreationDate().getTime() * TARGET_OVERRIDE_SCORE;
+          }
+          else if(conf.getMode() == Mode.HIGHEST_LEVEL) {
+
+            /*
+             * Favor highest level, but stays on current if target within 4 levels.
+             */
+
+            return target.getLevel() * (TARGET_OVERRIDE_SCORE / 5);
+          }
+          else if(conf.getMode() == Mode.SMART) {
+
+            /*
+             * Favors priority targets, then unmezzables, then nameds, then by level.  Only switches
+             * for priority targets, does not switch for any other reason.
+             */
+
+            return target.getLevel() + (target.isPriorityTarget() ? TARGET_OVERRIDE_SCORE * 10 : 0) + (target.isUnmezzable() ? TARGET_OVERRIDE_SCORE / 2 : 0) + (target.isNamedMob() ? TARGET_OVERRIDE_SCORE / 4 : 0);
+          }
+          else if(conf.getMode() == Mode.NEAREST) {
+
+            /*
+             * Favors nearest target, but stays on current if difference is less than 10.
+             */
+
+            return -target.getDistance(x, y) * (TARGET_OVERRIDE_SCORE / 10);
+          }
+          else {
+            throw new IllegalStateException("Unknown targetSelection: " + conf.getMode());
+          }
+        }
+      }
+    }
+
+    return score;
   }
 
   private long lastAgroMillis;
