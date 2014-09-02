@@ -1,43 +1,48 @@
 package autoeq;
 
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 import autoeq.DebuffCounter.Type;
 import autoeq.eq.ResistType;
+import autoeq.spelldata.effects.EffectDescriptor;
 
 public class SpellData {
-  public static final Set<Integer> NON_STACKING_ATTRIBS = new HashSet<>();
 
-  public static final int ATTRIB_DAMAGE = 0;
-  public static final int ATTRIB_MOVEMENT = 3;
-  public static final int ATTRIB_SLOW = 11;
-  public static final int ATTRIB_CHARM = 22;
-  public static final int ATTRIB_MESMERIZE = 31;
-  public static final int ATTRIB_INITIAL_DAMAGE = 79;
-  public static final int ATTRIB_HEAL_OVER_TIME = 100;
-  public static final int ATTRIB_MOUNT = 113;
-  public static final int ATTRIB_SPELL_HASTE = 127;
-  public static final int ATTRIB_LIMIT_MAX_LEVEL = 134;
-  public static final int ATTRIB_LIMIT_EFFECT = 137;
-  public static final int ATTRIB_LIMIT_SPELL = 139;
-  public static final int ATTRIB_LIMIT_MIN_CAST_TIME = 143;
-  public static final int ATTRIB_SHRINK = 298;
-  public static final int ATTRIB_LIMIT_EXCLUDE_COMBAT_SKILLS = 311;
-  public static final int ATTRIB_AUTO_CAST = 374;
-  public static final int ATTRIB_TWIN_CAST = 399;
-  public static final int ATTRIB_MANA_HP_DRAIN = 401;  // base2 determines hp drain
+  /**
+   * Attributes which donot conflict with themselves.  A max level restriction
+   * on one spell does not conflict with another max level restriction on
+   * another.
+   */
+  public static final Set<Attribute> NON_STACKING_ATTRIBS = new HashSet<>();
+
+  public static final int TARGET_TYPE_AE_PC_V1 = 36;
+  public static final int TARGET_TYPE_BEAM = 44;
+
+  private static final int TARGET_RESTRICTION_RAID_MOB = 191;
 
   static {
-    NON_STACKING_ATTRIBS.add(254);  // placeholder I think
-    NON_STACKING_ATTRIBS.add(57);   // ?
-    NON_STACKING_ATTRIBS.add(ATTRIB_LIMIT_MAX_LEVEL);
-    NON_STACKING_ATTRIBS.add(ATTRIB_LIMIT_EFFECT);
-    NON_STACKING_ATTRIBS.add(ATTRIB_LIMIT_SPELL);
-    NON_STACKING_ATTRIBS.add(ATTRIB_LIMIT_MIN_CAST_TIME);
-    NON_STACKING_ATTRIBS.add(ATTRIB_LIMIT_EXCLUDE_COMBAT_SKILLS);
-    NON_STACKING_ATTRIBS.add(ATTRIB_LIMIT_EXCLUDE_COMBAT_SKILLS);
-    NON_STACKING_ATTRIBS.add(ATTRIB_SPELL_HASTE);
+    NON_STACKING_ATTRIBS.add(Attribute.UNKNOWN254);  // placeholder I think
+    NON_STACKING_ATTRIBS.add(Attribute.UNKNOWN57);   // ?
+    NON_STACKING_ATTRIBS.add(Attribute.LIMIT_MAX_LEVEL);
+    NON_STACKING_ATTRIBS.add(Attribute.LIMIT_TARGET);
+    NON_STACKING_ATTRIBS.add(Attribute.LIMIT_EFFECT);
+    NON_STACKING_ATTRIBS.add(Attribute.LIMIT_SPELL_TYPE);
+    NON_STACKING_ATTRIBS.add(Attribute.LIMIT_SPELL);
+    NON_STACKING_ATTRIBS.add(Attribute.LIMIT_MIN_CAST_TIME);
+    NON_STACKING_ATTRIBS.add(Attribute.LIMIT_EXCLUDE_COMBAT_SKILLS);
+    NON_STACKING_ATTRIBS.add(Attribute.LIMIT_BY_MANA_COST);
+    NON_STACKING_ATTRIBS.add(Attribute.SPELL_HASTE);
+    NON_STACKING_ATTRIBS.add(Attribute.DISEASE_COUNTER);
+    NON_STACKING_ATTRIBS.add(Attribute.POISON_COUNTER);
+    NON_STACKING_ATTRIBS.add(Attribute.INCREASE_SPELL_DAMAGE);
+    NON_STACKING_ATTRIBS.add(Attribute.CURSE_COUNTER);
+    NON_STACKING_ATTRIBS.add(Attribute.INITIAL_DAMAGE);
+    NON_STACKING_ATTRIBS.add(Attribute.AUTO_CAST_ONE);
+    NON_STACKING_ATTRIBS.add(Attribute.AUTO_CAST_ANY);
+    NON_STACKING_ATTRIBS.add(Attribute.INCREASE_MELEE_MITIGATION);
   }
 
   private final int id;
@@ -50,6 +55,11 @@ public class SpellData {
   private final int mana;
   private final int castTime;
   private final int recastTime;
+  private final int durationType;
+  private final int durationValue;
+  private final int enduranceUpkeep;
+  private final int spellGroupId;
+  private final boolean isBeneficial;
 
   private final float[] base = new float[12];
   private final float[] base2 = new float[12];
@@ -67,10 +77,13 @@ public class SpellData {
   private final int brdLevel;
 
   private final int shortBuff;
+  private final int canMGBorTGB;
   private final int autoCastId;
   private final int timerId;      // shared lockout timer if > 0
 
   private final ResistType resistType;
+
+  private Map<Attribute, EffectDescriptor> spellEffects = new HashMap<>();
 
   public SpellData(String[] fields) {
     this.id = Integer.parseInt(fields[0]);
@@ -82,8 +95,8 @@ public class SpellData {
     this.aeRange = toInt(fields[10]);
     this.castTime = toInt(fields[13]);
     this.recastTime = toInt(fields[15]);
-//    this.durationType = Integer.parseInt(fields[16]);
-//    this.durationValue = Integer.parseInt(fields[17]);
+    this.durationType = toInt(fields[16]);
+    this.durationValue = toInt(fields[17]);
     this.mana = toInt(fields[19]);
 
     int resistCode = toInt(fields[85]);  // resist
@@ -106,6 +119,14 @@ public class SpellData {
       max[i] = toInt(fields[i + 44]);
       calc[i] = toInt(fields[i + 70]);
       attrib[i] = toInt(fields[i + 86]);
+
+      Attribute spellEffect = Attribute.getByAttributeCode(attrib[i]);
+
+      if(spellEffect != null) {
+        if(spellEffect != Attribute.DAMAGE || base2[i] != TARGET_RESTRICTION_RAID_MOB) {
+          spellEffects.put(spellEffect, spellEffect.createEffect((int)base[i], (int)base2[i], max[i], calc[i]));
+        }
+      }
     }
 
     targetType = toInt(fields[98]);
@@ -120,7 +141,11 @@ public class SpellData {
 
     autoCastId = toInt(fields[150]);
     shortBuff = toInt(fields[154]);
+    canMGBorTGB = toInt(fields[185]);
     timerId = toInt(fields[167]);
+    enduranceUpkeep = toInt(fields[174]);
+    spellGroupId = toInt(fields[207]);
+    isBeneficial = toBoolean(fields[83]);
   }
 
   private static float toFloat(String s) {
@@ -134,18 +159,34 @@ public class SpellData {
     if(s.trim().length() == 0) {
       return 0;
     }
+    if(s.length() > 10) {
+      return Integer.MAX_VALUE;
+    }
+
     return Integer.parseInt(s);
+  }
+
+  private static boolean toBoolean(String s) {
+    if(s.trim().length() == 0 || s.trim().equals("0")) {
+      return false;
+    }
+
+    return true;
   }
 
   private boolean isStackData(int i) {
     if(!((attrib[i] == 10 && (base[i] == -6 || base[i] == 0)) ||
-        (attrib[i] == 79 && base[i] > 0 && targetType == 6) ||
-        (attrib[i] == 0  && base[i] < 0) ||
-        (attrib[i] == 148 || attrib[i] == 149))) {
+         (attrib[i] == Attribute.INITIAL_DAMAGE.getAttribCode() && base[i] > 0 && targetType == 6) ||
+         ((attrib[i] == Attribute.DAMAGE.getAttribCode() || attrib[i] == Attribute.MANA.getAttribCode()) && (base[i] < 0 || (durationType == 0 && durationValue == 0))) ||  // Direct Heals/ManaInfusions always stack with regens.
+         (attrib[i] == 148 || attrib[i] == 149))) {
       return true;
     }
 
     return false;
+  }
+
+  public int getTargetType() {
+    return targetType;
   }
 
   /**
@@ -184,22 +225,52 @@ public class SpellData {
     return recastTime;
   }
 
-  public boolean stacksWith(SpellData sd) {
+  public boolean equalOrOfDifferentRank(SpellData sd) {
     if(sd.id == id) {
+      return true;
+    }
+    if(sd.spellGroupId != 0 && spellGroupId != 0 && sd.spellGroupId == spellGroupId) {  // Spells of different ranks don't(?) overwrite each other
+      return true;
+    }
+
+    return false;
+  }
+
+  public boolean isCombatAbility() {
+    return enduranceUpkeep > 0;
+  }
+
+  public boolean stacksWith(SpellData sd) {
+    if(equalOrOfDifferentRank(sd)) {
       return true;
     }
 
     for(int i = 0; i < 12; i++) {
-      if(sd.attrib[i] == attrib[i] && !NON_STACKING_ATTRIBS.contains(attrib[i])) {
-        if(isStackData(i) && sd.isStackData(i)) {
-          return false;
+      if(sd.attrib[i] == attrib[i] && !NON_STACKING_ATTRIBS.contains(Attribute.getByAttributeCode(attrib[i]))) {  // Do stack test if attrib[i] matches the other and is not an attribute that is ignored for stacking purposes
+        if((attrib[i] != Attribute.MESMERIZE.getAttribCode() && attrib[i] != Attribute.AC.getAttribCode()) || base[i] < sd.base[i]) {  // Larger values overwrite smaller values for certain attributes
+          if(isStackData(i) && sd.isStackData(i)) {
+            return false;
+          }
         }
       }
     }
 
-    if(blocks(sd)) {
+    /*
+     * Disc stacking:
+     *
+     * Basically, discs that go to the Combat Abilities window donot stack, however determining which ones do
+     * and which ones don't is akward.  The rules for a disc going to the Combat Abilities window are:
+     *
+     * 1) Must be beneficial
+     * 2) Must have either upkeep or a timerId between 1 and 6 with a duration > 0
+     */
+    if(isBeneficial && sd.isBeneficial && (enduranceUpkeep > 0 || (timerId >= 1 && timerId <= 6 && durationValue > 0)) && (sd.enduranceUpkeep > 0 || (sd.timerId >= 1 && sd.timerId <= 6 && sd.durationValue > 0))) {
       return false;
     }
+
+//    if(blocks(sd)) {
+//      return false;
+//    }
 
     if(sd.blocks(this)) {
       return false;
@@ -272,8 +343,12 @@ public class SpellData {
     return mana;
   }
 
+  public boolean getCanMGBorTGB() {
+    return canMGBorTGB != 0;
+  }
+
   public boolean isShortBuff() {
-    return shortBuff == -1;
+    return shortBuff != 0;
   }
 
   public DebuffCounter getDebuffCounters() {
@@ -338,6 +413,10 @@ public class SpellData {
     return getAttributeIndex(attribute) >= 0;
   }
 
+  public boolean hasAttribute(Attribute spellEffect) {
+    return getAttributeIndex(spellEffect.getAttribCode()) >= 0;
+  }
+
   public int getAttributeIndex(int attribute) {
     for(int i = 0; i < 12; i++) {
       if(getAttrib(i) == attribute) {
@@ -346,5 +425,14 @@ public class SpellData {
     }
 
     return -1;
+  }
+
+  public EffectDescriptor getEffect(Attribute spellEffect) {
+    return spellEffects.get(spellEffect);
+  }
+
+  @Override
+  public String toString() {
+    return name;
   }
 }

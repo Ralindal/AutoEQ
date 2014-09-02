@@ -105,8 +105,8 @@ public class ExperienceModule implements Module, ChatListener {
   }
 
   @Override
-  public boolean isLowLatency() {
-    return false;
+  public int getBurstCount() {
+    return 8;
   }
 
   private class Point {

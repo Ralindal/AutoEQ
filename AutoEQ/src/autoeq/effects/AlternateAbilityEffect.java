@@ -4,38 +4,49 @@ import autoeq.eq.EverquestSession;
 import autoeq.eq.ExpressionListener;
 import autoeq.eq.Spell;
 
-public class AlternateAbilityEffect implements Effect {
+public class AlternateAbilityEffect extends AbstractSpellBasedEffect {
   private final String name;
-  private final Spell spell;
   private final int agro;
 
+  private long readySince;
   private boolean ready;
+  private boolean usable;
+  private long readyMillis;
 
-  public AlternateAbilityEffect(EverquestSession session, String name, Spell spell, int agro) {
+  public AlternateAbilityEffect(EverquestSession session, String name, Spell spell, int agro, long lockOutMillis) {
+    super(session, spell, lockOutMillis);
+
     this.name = name;
-    this.spell = spell;
     this.agro = agro;
 
-    session.registerExpression("${Me.AltAbilityReady[" + name + "]}", new ExpressionListener() {
-      @Override
-      public void stateUpdated(String result) {
-        ready = result.equals("TRUE");
-      }
-    });
+    int id = session.getCharacterDAO().getAltAbilityID(name);
+
+    if(id >= 0) {
+      session.registerTimer("A " + id, new ExpressionListener() {
+        @Override
+        public void stateUpdated(String result) {
+          long millis = Long.parseLong(result) * 1000;
+
+          if(millis < 0) {
+            millis = 60 * 1000;
+          }
+
+          boolean nowReady = result.equals("0");
+
+          if(!ready && nowReady) {
+            readySince = System.currentTimeMillis();
+          }
+
+          usable = !result.equals("-1");
+          ready = nowReady;
+          readyMillis = millis;
+        }
+      });
+    }
   }
 
   public String getName() {
     return name;
-  }
-
-  @Override
-  public Spell getSpell() {
-    return spell;
-  }
-
-  @Override
-  public int getCastTime() {
-    return spell.getCastTime();
   }
 
   @Override
@@ -49,13 +60,13 @@ public class AlternateAbilityEffect implements Effect {
   }
 
   @Override
-  public String getCastingLine() {
-    return "/alt activate ${Me.AltAbility[" + name + "].ID}";
+  public void internalActivate() {
+    getSession().doCommand("/alt activate ${Me.AltAbility[" + name + "].ID}");
   }
 
   @Override
-  public boolean isReady() {
-    return ready;
+  public long getReadyMillis() {
+    return readyMillis;
   }
 
   @Override
@@ -66,5 +77,25 @@ public class AlternateAbilityEffect implements Effect {
   @Override
   public boolean willUseGOM() {
     return false;
+  }
+
+  @Override
+  public boolean requiresStanding() {
+    return true;
+  }
+
+  @Override
+  public boolean internalIsUsable() {
+    return usable;
+  }
+
+  @Override
+  protected boolean isUnaffectedBySilence() {
+    return false;
+  }
+
+  @Override
+  protected boolean usesSpellCasting() {
+    return true;
   }
 }

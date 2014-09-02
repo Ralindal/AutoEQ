@@ -28,35 +28,19 @@ public class InspectionUtils {
     return true;
   }
 
-  @SuppressWarnings({"unchecked", "rawtypes"})
-  public static boolean areTypesAlmostCompatible(Class<?>[] targets, Object... sources) {
+  public static boolean areTypesAlmostCompatible(Class<?>[] targets, Class<?>... sources) {
     if(targets.length != sources.length) {
       return false;
     }
 
     for(int i = 0; i < targets.length; i++) {
-      Object source = sources[i];
+      Class<?> source = sources[i];
 
       if(source == null) {
         continue;
       }
 
-      if(targets[i].isAssignableFrom(source.getClass())) {
-        continue;
-      }
-
-
-      if(targets[i].isEnum() && sources[i] instanceof String) {
-        try {
-          Enum.valueOf((Class<? extends Enum>)targets[i], (String)source);
-          continue;
-        }
-        catch(IllegalArgumentException e) {
-          return false;
-        }
-      }
-
-      if(!translateFromPrimitive(targets[i]).isAssignableFrom(translateFromPrimitive(source.getClass()))) {
+      if(!isTypeAlmostCompatible(targets[i], source)) {
         return false;
       }
     }
@@ -64,7 +48,29 @@ public class InspectionUtils {
     return true;
   }
 
-  @SuppressWarnings({"unchecked", "rawtypes"})
+  public static boolean isTypeAlmostCompatible(Class<?> targetClass, Class<?> sourceClass) {
+    if(targetClass.isAssignableFrom(sourceClass)) {
+      return true;
+    }
+
+    if(targetClass.isEnum() && String.class.isAssignableFrom(sourceClass)) {
+      return true;
+    }
+
+    Class<?> targetWrapper = translateFromPrimitive(targetClass);
+    Class<?> sourceWrapper = translateFromPrimitive(sourceClass);
+
+    if(targetWrapper.isAssignableFrom(Long.class) && sourceWrapper.isAssignableFrom(Integer.class)) {
+      return true;
+    }
+
+    if(targetWrapper.isAssignableFrom(sourceWrapper)) {
+      return true;
+    }
+
+    return false;
+  }
+
   public static Object[] convertSourcesToBeCompatible(Class<?>[] targets, Object... sources) {
     if(targets.length != sources.length) {
       throw new IllegalArgumentException("call areTypesAlmostCompatible first to check if the types match");
@@ -73,35 +79,45 @@ public class InspectionUtils {
     Object[] results = new Object[sources.length];
 
     for(int i = 0; i < targets.length; i++) {
-      Object source = sources[i];
+      results[i] = convertToType(targets[i], sources[i]);
+    }
 
-      results[i] = source;
+    return results;
+  }
 
-      if(source == null) {
-        continue;
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  protected static Object convertToType(Class<?> target, Object source) {
+    Object result = source;
+
+    if(source == null) {
+      return result;
+    }
+
+    if(target.isAssignableFrom(source.getClass())) {
+      return result;
+    }
+
+    if(target.isEnum() && source instanceof String) {
+      try {
+        return Enum.valueOf((Class<? extends Enum>)target, (String)source);
       }
-
-      if(targets[i].isAssignableFrom(source.getClass())) {
-        continue;
-      }
-
-
-      if(targets[i].isEnum() && sources[i] instanceof String) {
-        try {
-          results[i] = Enum.valueOf((Class<? extends Enum>)targets[i], (String)source);
-          continue;
-        }
-        catch(IllegalArgumentException e) {
-          throw new IllegalArgumentException("call areTypesAlmostCompatible first to check if the types match");
-        }
-      }
-
-      if(!translateFromPrimitive(targets[i]).isAssignableFrom(translateFromPrimitive(source.getClass()))) {
+      catch(IllegalArgumentException e) {
         throw new IllegalArgumentException("call areTypesAlmostCompatible first to check if the types match");
       }
     }
 
-    return results;
+    Class<?> targetWrapper = translateFromPrimitive(target);
+    Class<?> sourceWrapper = translateFromPrimitive(source.getClass());
+
+    if(targetWrapper.isAssignableFrom(Long.class) && sourceWrapper.isAssignableFrom(Integer.class)) {
+      return result;
+    }
+
+    if(!targetWrapper.isAssignableFrom(sourceWrapper)) {
+      throw new IllegalArgumentException("call areTypesAlmostCompatible first to check if the types match");
+    }
+
+    return result;
   }
 
   /**

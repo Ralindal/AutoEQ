@@ -35,6 +35,14 @@ public class EffectSet {
     return single != null ? single : group;
   }
 
+  public Effect getGroupOrSingle() {
+    return group != null ? group : single;
+  }
+
+  public boolean isUsable() {
+    return (single != null && single.isUsable()) || (group != null && group.isUsable());
+  }
+
   @Override
   public String toString() {
     return "EffectSet(S: " + single + " G: " + group + ")";

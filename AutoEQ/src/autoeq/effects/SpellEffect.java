@@ -6,8 +6,7 @@ import java.util.Map;
 import autoeq.eq.EverquestSession;
 import autoeq.eq.Spell;
 
-
-public class SpellEffect implements Effect {
+public class SpellEffect extends AbstractSpellBasedEffect {
   private static final Map<String, Integer> MAX_GOM_LEVEL = new HashMap<>();
 
   static {
@@ -18,26 +17,15 @@ public class SpellEffect implements Effect {
     MAX_GOM_LEVEL.put("Gift of Dreamlike Exquisite Radiant Mana", 90);
     MAX_GOM_LEVEL.put("Gift of Ascendant Exquisite Radiant Mana", 95);
     MAX_GOM_LEVEL.put("Gift of Phantasmal Exquisite Radiant Mana", 100);
+    MAX_GOM_LEVEL.put("Gracious Mana", 100);
   }
 
-  private final EverquestSession session;
-  private final Spell spell;
   private final int agro;
 
-  public SpellEffect(EverquestSession session, Spell spell, int agro) {
-    this.session = session;
-    this.spell = spell;
+  public SpellEffect(EverquestSession session, Spell spell, int agro, long lockOutMillis) {
+    super(session, spell, lockOutMillis);
+
     this.agro = agro;
-  }
-
-  @Override
-  public Spell getSpell() {
-    return spell;
-  }
-
-  @Override
-  public int getCastTime() {
-    return spell.getCastTime();
   }
 
   @Override
@@ -51,22 +39,32 @@ public class SpellEffect implements Effect {
   }
 
   @Override
-  public String getCastingLine() {
-    return "/cast " + session.getMe().getGem(spell);
+  public void internalActivate() {
+//    getSession().doCommand("/multiline ; /echo ==> \"/cast " + getSession().getMe().getGem(getSpell()) + "\" ${Math.Calc[${MacroQuest.CurrentTimeMillis}-" + System.currentTimeMillis() + "]} ms lag;/cast " + getSession().getMe().getGem(getSpell()));
+    getSession().doCommand("/cast " + getSession().getMe().getGem(getSpell()));
   }
 
   @Override
-  public boolean isReady() {
-    return session.getMe().isSpellReady(spell);
+  protected boolean internalIsReady() {
+    if(!getSession().getMe().isSpellReady(getSpell())) {
+      return false;
+    }
+
+    return super.internalIsReady();
+  }
+
+  @Override
+  public long getReadyMillis() {
+    return getSession().getMe().getGemReadyMillis(getSession().getMe().getGem(getSpell()));
   }
 
   @Override
   public boolean willUseGOM() {
-    for(String name : session.getMe().getBuffNames()) {
+    for(String name : getSession().getMe().getBuffNames()) {
       Integer maxLevel = MAX_GOM_LEVEL.get(name);
 
       if(maxLevel != null) {
-        return spell.getLevel() <= maxLevel;
+        return getSpell().getLevel() <= maxLevel;
       }
     }
 
@@ -75,6 +73,21 @@ public class SpellEffect implements Effect {
 
   @Override
   public String toString() {
-    return spell.getName();
+    return getSpell().getName();
+  }
+
+  @Override
+  public boolean requiresStanding() {
+    return true;
+  }
+
+  @Override
+  protected boolean isUnaffectedBySilence() {
+    return false;
+  }
+
+  @Override
+  protected boolean usesSpellCasting() {
+    return true;
   }
 }

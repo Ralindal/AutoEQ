@@ -19,6 +19,7 @@ import com.google.inject.Inject;
 @ThreadScoped
 public class RezWaitModule implements Module {
   private static final Pattern REZ_TEXT = Pattern.compile("([A-Za-z]+) wants to cast ([A-Za-z ]+) \\(([0-9]+).+");
+  private static final Pattern CALL_TEXT = Pattern.compile("([A-Za-z]+) is attempting to return you to your.+");
 
   private final EverquestSession session;
 
@@ -47,8 +48,8 @@ public class RezWaitModule implements Module {
   }
 
   @Override
-  public boolean isLowLatency() {
-    return false;
+  public int getBurstCount() {
+    return 8;
   }
 
   @Override
@@ -64,7 +65,7 @@ public class RezWaitModule implements Module {
     if(deathMillis != 0) {
       long waitedMillis = System.currentTimeMillis() - deathMillis;
 
-      session.delay(2500);
+      session.delay(500);
 
       // If dead more than an hour then camp out
       if(waitedMillis > 60 * 60 * 1000) {
@@ -85,17 +86,26 @@ public class RezWaitModule implements Module {
         String rezText = session.translate("${Window[ConfirmationDialogBox].Child[CD_TextOutput].Text}");
 
         Matcher matcher = REZ_TEXT.matcher(rezText);
+        Matcher callMatcher = CALL_TEXT.matcher(rezText);
 
-        if(matcher.matches() && (session.getGroupMemberNames().contains(matcher.group(1)) || session.getBotNames().contains(matcher.group(1))) && Integer.parseInt(matcher.group(3)) >= 90) {
-          session.delay(1000);
+        if((matcher.matches() && (session.getGroupMemberNames().contains(matcher.group(1)) || session.getBotNames().contains(matcher.group(1))) && Integer.parseInt(matcher.group(3)) >= 90) ||
+            (callMatcher.matches() && (session.getGroupMemberNames().contains(callMatcher.group(1)) || session.getBotNames().contains(callMatcher.group(1))))) {
           session.doCommand("/nomodkey /notify ConfirmationDialogBox Yes_Button leftmouseup");
-          session.delay(1000);
+          session.delay(500);
 
-          if(session.delay(2500, "${Window[RespawnWnd].Open}")) {
-            session.doCommand("/nomodkey /notify RespawnWnd RW_OptionsList listselect 2");
-            session.delay(1000);
+          if(session.delay(5000, "${Window[RespawnWnd].Open}")) {
+            String secondOptionName = session.translate("${Window[RespawnWnd].Child[RW_OptionsList].List[2,2]}");  // Resurrect
+            int rezOption = secondOptionName.equalsIgnoreCase("Resurrect") ? 2 : 1;
+              //session.getZoneId() == 213 ? 1 : 2;   // Exception for Plane of War
+
+            session.doCommand("/nomodkey /notify RespawnWnd RW_OptionsList listselect " + rezOption);
+            session.delay(500);
             session.doCommand("/nomodkey /notify RespawnWnd RW_SelectButton leftmouseup");
-            session.delay(1000);
+            session.delay(500);
+
+            session.echo("REZWAIT: Accepted Rez, cancelling automatic camp-out.");
+            death = false;
+            deathMillis = 0;
           }
         }
         else {

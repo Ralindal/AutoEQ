@@ -3,6 +3,6 @@ package autoeq.eq;
 import java.util.List;
 
 public interface Module {
-  public boolean isLowLatency();
+  public int getBurstCount();
   public List<Command> pulse();
 }

@@ -12,7 +12,10 @@ public class LootConf {
       pattern = conf.pattern;
       upgrades = conf.upgrades;
       normal = conf.normal;
+      lore = conf.lore;
       delay = conf.delay;
+      maxStack = conf.maxStack;
+      unique = conf.unique;
     }
   }
 
@@ -32,10 +35,26 @@ public class LootConf {
   private Mode normal = Mode.OFF;
 
   @Parameter
+  private Mode lore = Mode.OFF;
+
+  @Parameter
   private int delay = 0;
+
+  @Parameter
+  private int maxStack = 0;
+
+  @Parameter
+  private boolean unique = false;
+
+  @Parameter
+  private boolean destroyQuest = false;
 
   public String getPattern() {
     return pattern;
+  }
+
+  public void setPattern(String pattern) {
+    this.pattern = pattern;
   }
 
   public Mode getUpgrades() {
@@ -46,7 +65,23 @@ public class LootConf {
     return normal;
   }
 
+  public Mode getLore() {
+    return lore;
+  }
+
   public int getDelay() {
     return delay;
+  }
+
+  public int getMaxStack() {
+    return maxStack;
+  }
+
+  public boolean isDestroyQuest() {
+    return destroyQuest;
+  }
+
+  public boolean isUnique() {
+    return unique;
   }
 }

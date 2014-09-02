@@ -2,10 +2,12 @@ package autoeq.ini;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class Section implements Iterable<String> {
   private final String name;
@@ -29,6 +31,30 @@ public class Section implements Iterable<String> {
       list = new ArrayList<>();
       values.put(key, list);
     }
+
+    list.add(value);
+  }
+
+  public void putAtStart(String key, String value) {
+    List<String> list = values.get(key);
+
+    if(list == null) {
+      list = new ArrayList<>();
+      values.put(key, list);
+    }
+
+    list.add(0, value);
+  }
+
+  public void set(String key, String value) {
+    List<String> list = values.get(key);
+
+    if(list == null) {
+      list = new ArrayList<>();
+      values.put(key, list);
+    }
+
+    list.clear();
     list.add(value);
   }
 
@@ -54,6 +80,22 @@ public class Section implements Iterable<String> {
     }
 
     return results;
+  }
+
+  private Set<String> allKeys = null;
+
+  public Set<String> getAllKeys() {
+    if(allKeys == null) {
+      allKeys = new HashSet<>();
+
+      allKeys.addAll(values.keySet());
+
+      for(Section parent : parents) {
+        allKeys.addAll(parent.getAllKeys());
+      }
+    }
+
+    return allKeys;
   }
 
   @Override

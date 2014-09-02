@@ -42,6 +42,10 @@ public class CampConf {
     return at;
   }
 
+  public void setAt(String at) {
+    this.at = at;
+  }
+
   public int getSize() {
     return size;
   }

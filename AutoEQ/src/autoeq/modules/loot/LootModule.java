@@ -10,13 +10,17 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
+import autoeq.Item;
 import autoeq.ThreadScoped;
 import autoeq.commandline.CommandLineParser;
+import autoeq.eq.ChatListener;
 import autoeq.eq.Command;
 import autoeq.eq.EverquestSession;
 import autoeq.eq.Me;
 import autoeq.eq.Module;
+import autoeq.eq.RollingAverage;
 import autoeq.eq.Spawn;
 import autoeq.eq.SpawnType;
 import autoeq.eq.UserCommand;
@@ -24,7 +28,6 @@ import autoeq.modules.loot.LootConf.Mode;
 import autoeq.modules.pull.MoveUtils;
 
 import com.google.inject.Inject;
-
 
 @ThreadScoped
 public class LootModule implements Module {
@@ -34,6 +37,7 @@ public class LootModule implements Module {
   private final LootManager lootManager;
   private final Set<Spawn> looted = new HashSet<>();
   private final Map<Spawn, Long> delayedCorpses = new HashMap<>();
+  private final Map<Spawn, Integer> delayedCorpsesAttempts = new HashMap<>();
 
   private LootConf conf = new LootConf();
 
@@ -41,10 +45,45 @@ public class LootModule implements Module {
   private boolean lootCorpses;
   private final Map<Integer, TreeSet<Integer>> slotToHPMap = new HashMap<>();
 
+  private final RollingAverage platinumCorpseValues = new RollingAverage(65 * 60 * 1000);
+  private final RollingAverage platinumLootValues = new RollingAverage(65 * 60 * 1000);
+
   @Inject
   public LootModule(final EverquestSession session) throws IOException {
     this.session = session;
     this.lootManager = new IniLootManager(session.getGlobalIni().getValue("Global", "Path"));
+
+    session.addChatListener(new ChatListener() {
+      private final Pattern PATTERN = Pattern.compile("You receive (.+) from the corpse\\.");
+
+      @Override
+      public void match(Matcher matcher) {
+        platinumCorpseValues.add(((double)extractCopperValue(matcher.group(1))) / 1000);
+      }
+
+      @Override
+      public Pattern getFilter() {
+        return PATTERN;
+      }
+    });
+
+    session.addChatListener(new ChatListener() {
+      private final Pattern PATTERN = Pattern.compile("[A-Z].+ tells you, 'I'll give you ((?:[0-9]+ (?:platinum|gold|silver|copper) )+)per (.+)'");
+
+      @Override
+      public void match(Matcher matcher) {
+        String itemName = matcher.group(2);
+        LootType lootType = lootManager.getLootType(itemName);
+        if(lootType != null) {
+          lootManager.addLoot(itemName, lootType, extractCopperValue(matcher.group(1)));
+        }
+      }
+
+      @Override
+      public Pattern getFilter() {
+        return PATTERN;
+      }
+    });
 
     session.addUserCommand("loot", Pattern.compile(".+"), CommandLineParser.getHelpString(LootConf.class), new UserCommand() {
       @Override
@@ -53,34 +92,49 @@ public class LootModule implements Module {
 
         CommandLineParser.parse(newConf, matcher.group(0));
 
+        try {
+          Pattern.compile(newConf.getPattern());
+        }
+        catch(PatternSyntaxException e) {
+          session.echo("==> Bad pattern, ignorning: " + newConf.getPattern());
+          newConf.setPattern("off");
+        }
+
         conf = newConf;
 
-        lootCorpses = !conf.getPattern().equals("off") || conf.getNormal() == Mode.ON || conf.getUpgrades() == Mode.ON;
+        lootCorpses = !conf.getPattern().equals("off") || conf.getNormal() == Mode.ON || conf.getUpgrades() == Mode.ON || conf.getLore() == Mode.ON;
 
         session.echo(
-          String.format("==> Looting is %s.%s%s Delay is %ds",
+          String.format("==> Looting is %s.%s%s%s Delay is %ds.%s",
             lootCorpses ? "on" : "off",
-            conf.getPattern().equals("off") ? "" : " Specifically looting " + conf.getPattern() + ".",
+            conf.getPattern().equals("off") ? "" : " Specifically looting " + conf.getPattern() + (conf.isUnique() ? ", no duplicates." : ", duplicates allowed."),
             conf.getUpgrades() == Mode.OFF ? "" : " Looting upgrades.",
-            conf.getDelay()
+            conf.getLore() == Mode.OFF ? "" : " Looting lore items.",
+            conf.getDelay(),
+            conf.getMaxStack() > 0 ? " Stack max. is " + conf.getMaxStack() + "." : ""
           )
         );
       }
     });
 
     for(int i = 0; i <= 32; i++) {
-      addItem(session.translate("${Me.Inventory[" + i + "].WornSlot[1]},${Me.Inventory[" + i + "].HP}"));
+      addItem(session.translate("${Me.Inventory[" + i + "].WornSlot[1]}^${Me.Inventory[" + i + "].HP}^${Me.Inventory[" + i + "].ID}^${Me.Inventory[" + i + "].Name}^${Me.Inventory[" + i + "].NoDrop}^${Me.Inventory[" + i + "].Lore}^${Me.Inventory[" + i + "].Attuneable}"));
     }
 
     for(int i = 23; i <= 32; i++) {
-      for(int slotStart = 0; slotStart < 32; slotStart += 8) {
+      for(int slotStart = 0; slotStart < 40; slotStart += 8) {
         String translateString = "";
 
         for(int slot = slotStart; slot < slotStart + 8; slot++) {
           if(!translateString.isEmpty()) {
             translateString += ";";
           }
-          translateString += "${Me.Inventory[" + i + "].Item[" + slot + "].WornSlot[1]},${Me.Inventory[" + i + "].Item[" + slot + "].HP}";
+
+          for(String fieldName : new String[] {"WornSlot[1]", "HP", "ID", "Name", "NoDrop", "Lore", "Attuneable"}) {
+            translateString += "${Me.Inventory[" + i + "].Item[" + slot + "]." + fieldName + "}^";
+          }
+
+          translateString = translateString.substring(0, translateString.length() - 1);
         }
 
         for(String itemInfo : session.translate(translateString).split(";")) {
@@ -90,8 +144,32 @@ public class LootModule implements Module {
     }
   }
 
+  private static final Pattern COIN_VALUE_PATTERN = Pattern.compile("([0-9]+) (platinum|gold|silver|copper)");
+  private static final Map<String, Long> COIN_MULTIPLIERS = new HashMap<>();
+
+  static {
+    COIN_MULTIPLIERS.put("platinum", 1000L);
+    COIN_MULTIPLIERS.put("gold", 100L);
+    COIN_MULTIPLIERS.put("silver", 10L);
+    COIN_MULTIPLIERS.put("copper", 1L);
+  }
+
+  private static long extractCopperValue(String text) {
+    Matcher matcher = COIN_VALUE_PATTERN.matcher(text);
+    long copperValue = 0;
+
+    while(matcher.find()) {
+      long value = Long.valueOf(matcher.group(1));
+      String coinType = matcher.group(2);
+
+      copperValue += value * COIN_MULTIPLIERS.get(coinType);
+    }
+
+    return copperValue;
+  }
+
   private void addItem(String itemInfo) {
-    String[] results = itemInfo.split(",");
+    String[] results = itemInfo.split("\\^");
 
     if(!results[0].equals("NULL") && !results[1].equals("NULL")) {
       int slot = Integer.parseInt(results[0]);
@@ -106,18 +184,25 @@ public class LootModule implements Module {
 
       hps.add(hp);
     }
+
+    if(!results[2].equals("NULL")) {
+      Item item = new Item(Integer.parseInt(results[2]), results[3], Integer.parseInt(results[1]), results[4].equals("TRUE"), results[5].equals("TRUE"), results[6].equals("TRUE"));
+
+      session.getItemDAO().addItem(item);
+    }
   }
 
   @Override
   public List<Command> pulse() {
     Me me = session.getMe();
 
-    if(lootCorpses && me.isAlive() && !me.isMoving() && !me.isCasting() && !me.inCombat() && lootDelayUntil < System.currentTimeMillis() && session.tryLockMovement()) {
+    if(lootCorpses && me.isAlive() && !me.isMoving() && (!me.isCasting() || me.isBard()) && me.getExtendedTargetCount() == 0 && lootDelayUntil < System.currentTimeMillis() && session.tryLockMovement()) {
       try {
         Set<Spawn> spawns = session.getSpawns();
 
         looted.retainAll(spawns);
         delayedCorpses.keySet().retainAll(spawns);
+        delayedCorpsesAttempts.keySet().retainAll(spawns);
 
         float startX = me.getX();
         float startY = me.getY();
@@ -125,7 +210,13 @@ public class LootModule implements Module {
 
         // Check if there's a corpse needing looting
         for(Spawn spawn : spawns) {
-          if(spawn.getType() == SpawnType.NPC_CORPSE && !looted.contains(spawn) && spawn.getDistance(startX, startY) < RADIUS && Math.abs(spawn.getZ() - me.getZ()) < 25) {
+          Spawn currentSpawn = session.getSpawn(spawn.getId());
+
+          /*
+           * Check if spawn still exists, is a corpse, was not recently looted and is nearby.
+           */
+
+          if(currentSpawn != null && currentSpawn.equals(spawn) && spawn.getType() == SpawnType.NPC_CORPSE && !looted.contains(spawn) && spawn.getDistance(startX, startY) < RADIUS && Math.abs(spawn.getZ() - me.getZ()) < 25) {
             Long delayUntil = delayedCorpses.get(spawn);
             Date timeOfDeath = spawn.getTimeOfDeath();
 
@@ -138,12 +229,18 @@ public class LootModule implements Module {
                   break;
                 }
 
-                session.echo("LOOT: Looting [ " + spawn.getName() + " ]");
+                session.delayUntilUpdate();  // Give chance to update before looting each corpse
+                session.echo(String.format("LOOT: Looting [ %s ] -- %.3f pp/h, %.3f pp/corpse, %.3f sell loot pp/h",
+                  spawn.getName(),
+                  platinumCorpseValues.computeAverageOverTime(60 * 60 * 1000),
+                  platinumCorpseValues.computeAveragePerEntry(60 * 60 * 1000),
+                  platinumLootValues.computeAverageOverTime(60 * 60 * 1000)
+                ));
                 session.doCommand("/target id " + spawn.getId());
                 session.delay(300);
 
                 // Now we move to the corpse
-                MoveUtils.moveTo(session, spawn.getX(), spawn.getY());
+                MoveUtils.moveTo(session, spawn.getX(), spawn.getY(), null);
                 moved = true;
 
                 session.doCommand("/loot");
@@ -162,9 +259,15 @@ public class LootModule implements Module {
 
                         String itemName = session.translate("${Corpse.Item[" + itemNo + "].Name}");
                         String itemId = session.translate("${Corpse.Item[" + itemNo + "].ID}");
+                        int itemsInStack = Integer.parseInt(session.translate("${Corpse.Item[" + itemNo + "].Stack}"));
 
                         boolean noDrop = session.translate("${Corpse.Item[" + itemNo + "].NoDrop}").equals("TRUE");
-                        boolean matchedPattern = !conf.getPattern().equals("off") && itemName.matches("(?i)" + conf.getPattern());
+                        boolean lore = session.translate("${Corpse.Item[" + itemNo + "].Lore}").equals("TRUE");
+                        boolean loot = !conf.getPattern().equals("off") && itemName.matches("(?i)" + conf.getPattern());
+
+                        if(conf.getLore() == Mode.ON && lore) {
+                          loot = true;
+                        }
 
                         if(conf.getUpgrades() == Mode.ON && noDrop) {
                           String hp = session.translate("${Corpse.Item[" + itemNo + "].HP}");
@@ -175,7 +278,7 @@ public class LootModule implements Module {
                           if(classes.contains(me.getClassLongName())) {  // Useable by me?
                             if(type.equals("Augmentation")) {
                               session.echo("LOOT: '" + itemName + "' is an augmentation... looting.");
-                              matchedPattern = true;
+                              loot = true;
                             }
                             else if(!hp.equals("NULL") && !wornSlot.equals("NULL") && !hp.equals("NULL")) {
                               int slot = Integer.parseInt(wornSlot);
@@ -199,14 +302,14 @@ public class LootModule implements Module {
 
                                 if(bestHP < itemHP) {
                                   session.echo("LOOT: '" + itemName + "' looks better... looting.");
-                                  matchedPattern = true;
+                                  loot = true;
                                   hps.add(itemHP);
                                 }
                               }
                               else {
                                 // Nothing in that slot, so loot
                                 session.echo("LOOT: '" + itemName + "' fits in an empty slot... looting.");
-                                matchedPattern = true;
+                                loot = true;
                                 hps = new TreeSet<>();
                                 hps.add(itemHP);
                                 slotToHPMap.put(slot, hps);
@@ -215,13 +318,13 @@ public class LootModule implements Module {
                           }
                         }
 
-                        if(conf.getNormal() == Mode.ON || matchedPattern) {
+                        if(conf.getNormal() == Mode.ON || loot) {
 //                        if(conf.getPattern().equals("off") || itemName.matches("(?i)" + conf.getPattern())) {
-                          LootType lootType = matchedPattern ? LootType.KEEP : lootManager.getLootType(itemName);
+                          LootType lootType = loot ? LootType.KEEP : lootManager.getLootType(itemName);
 
                           if(lootType == null) {
                             lootType = noDrop ? LootType.IGNORE : LootType.KEEP;
-                            lootManager.addLoot(itemName, lootType);
+                            lootManager.addLoot(itemName, lootType, null);
                             session.echo("LOOT: Adding new loot: " + itemName);
                           }
 
@@ -292,17 +395,32 @@ public class LootModule implements Module {
                             }
 
                             // AvailableSlots now contains total slots this item would fit in.
-                            session.echo("LOOT: Availabe slots for ${Corpse.Item[" + itemNo + "]}: " + availableSlots);
+                            // session.echo("LOOT: Availabe slots for ${Corpse.Item[" + itemNo + "]}: " + availableSlots);
 
-                            // When keeping items, we must make sure there's space.  Special rules are followed
-                            // for stackable and lore items.
-                            boolean canLoot = session.evaluate(
-                              "((!${FindItem[${Corpse.Item[" + itemNo + "]}].ID} && !${FindItemBank[${Corpse.Item[" + itemNo + "]}].ID}) || !${Corpse.Item[" + itemNo + "].Lore}) && " +
-                              "(" + availableSlots + " || (${FindItemCount[=${Corpse.Item[" + itemNo + "].Name}]} && ${Corpse.Item[" + itemNo + "].Stackable} && ${Corpse.Item[" + itemNo + "].FreeStack}))"
-                            );
+                            int stackCount = Integer.parseInt(session.translate("${FindItemCount[=${Corpse.Item[" + itemNo + "].Name}]}"));
+                            int maxStackSize = conf.getMaxStack() > 0 ? conf.getMaxStack() : 10000;
 
-                            if(!canLoot) {
-                              session.echo("LOOT: Left ${Corpse.Item[" + itemNo + "]} on corpse, no more space");
+                            if(stackCount < maxStackSize) {
+                              if(stackCount == 0 || !conf.isUnique() || !loot) {
+                                // When keeping items, we must make sure there's space.  Special rules are followed
+                                // for stackable and lore items.
+                                boolean canLoot = session.evaluate(
+                                  "((!${FindItem[${Corpse.Item[" + itemNo + "]}].ID} && !${FindItemBank[${Corpse.Item[" + itemNo + "]}].ID}) || !${Corpse.Item[" + itemNo + "].Lore}) && " +
+                                  "(" + availableSlots + " || (${FindItemCount[=${Corpse.Item[" + itemNo + "].Name}]} && ${Corpse.Item[" + itemNo + "].Stackable} && ${Corpse.Item[" + itemNo + "].FreeStack} >= ${Corpse.Item[" + itemNo + "].Stack}))"
+                                );
+
+                                if(!canLoot) {
+                                  session.echo("LOOT: Left ${Corpse.Item[" + itemNo + "]} on corpse, no more space");
+                                  continue;
+                                }
+                              }
+                              else {
+                                session.echo("LOOT: Left ${Corpse.Item[" + itemNo + "]} on corpse, duplicate");
+                                continue;
+                              }
+                            }
+                            else {
+                              session.echo("LOOT: Left ${Corpse.Item[" + itemNo + "]} on corpse, stack size limit reached");
                               continue;
                             }
                           }
@@ -319,6 +437,19 @@ public class LootModule implements Module {
 
                             // Wait until item looted
                             session.delay(2500, "!${Corpse.Item[" + itemNo + "].ID}");
+
+                            if(lootType == LootType.KEEP) {
+                              Long lootValue = lootManager.getLootValue(itemName);
+
+                              if(lootValue != null) {
+                                lootValue *= itemsInStack;
+                                session.echo(String.format("LOOT: Looted '%s' %swith value %7.3f", itemName, itemsInStack > 1 ? "(" + itemsInStack + ") " : "", ((double)lootValue) / 1000.0));
+                                platinumLootValues.add(((double)lootValue) / 1000.0);
+                              }
+                              else {
+                                session.echo(String.format("LOOT: Looted '%s' of unknown value", itemName));
+                              }
+                            }
 
                             // Destroy item on cursor if needed
                             if(lootType == LootType.DESTROY) {
@@ -346,9 +477,23 @@ public class LootModule implements Module {
                 }
 
                 if(!looted.contains(spawn)) {
-                  session.echo("LOOT: Unable to loot [ " + spawn.getName() + " ].  Retrying in 2 minutes.");
+                  Long millis = delayedCorpses.get(spawn);
+                  Integer attempts = delayedCorpsesAttempts.get(spawn);
 
-                  delayedCorpses.put(spawn, System.currentTimeMillis() + 150 * 1000);
+                  if(attempts == null) {
+                    attempts = 2;
+                  }
+                  else {
+                    attempts++;
+                  }
+
+                  long retryTime = (long)((Math.pow(2, attempts) + (Math.random() - 0.5) * Math.pow(2, attempts - 1)) * 1000);
+                  millis = System.currentTimeMillis() + retryTime;
+
+                  session.echo(String.format("LOOT: Unable to loot [ %s ].  Retrying in %.1f seconds.", spawn.getName(), retryTime / 1000.0));
+
+                  delayedCorpses.put(spawn, millis);
+                  delayedCorpsesAttempts.put(spawn, attempts);
                 }
               }
             }
@@ -357,7 +502,7 @@ public class LootModule implements Module {
 
         if(moved) {
           // Move back
-          MoveUtils.moveBackwardsTo(session, startX, startY);
+          MoveUtils.moveBackwardsTo(session, startX, startY, null);
         }
       }
       finally {
@@ -373,7 +518,7 @@ public class LootModule implements Module {
   }
 
   @Override
-  public boolean isLowLatency() {
-    return false;
+  public int getBurstCount() {
+    return 8;
   }
 }

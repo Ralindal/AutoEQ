@@ -38,8 +38,8 @@ public class AutoMoveModule implements Module {
   }
 
   @Override
-  public boolean isLowLatency() {
-    return true;
+  public int getBurstCount() {
+    return 1;
   }
 
   @Override

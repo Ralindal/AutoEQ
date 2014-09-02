@@ -5,16 +5,16 @@ import autoeq.expr.Parser;
 import autoeq.expr.SyntaxException;
 
 public class Priority {
-  public static double decodePriority(EverquestSession session, Effect effect, String priority, int basePriority) {
-    if(priority == null) {
+  public static double decodePriority(EverquestSession session, Spawn target, Effect effect, String priorityExpr, int basePriority) {
+    if(priorityExpr == null || priorityExpr.isEmpty()) {
       return basePriority;
     }
 
     try {
-      return ((Number)Parser.parse(new ExpressionRoot(session, null, null, null, effect), priority)).doubleValue();
+      return ((Number)Parser.parse(new ExpressionRoot(session, target, null, null, effect), priorityExpr)).doubleValue();
     }
     catch(SyntaxException e) {
-      System.err.println("Error parsing priority '" + priority + "', using basePriority (" + basePriority + "): " + e);
+      session.logErr("Error parsing priority '" + priorityExpr + "', using basePriority (" + basePriority + ") for " + effect + ": " + e);
       return basePriority;
     }
   }

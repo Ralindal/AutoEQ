@@ -15,7 +15,7 @@ public class CommandLineParserTest {
 
   @Test
   public void shouldHaveCorrectHelpString() {
-    Assert.assertEquals("[range <number>] [rangefactor <fraction>] [profile <text>] [(off|nearest|smart)] [target (off|nearest|smart)]", CommandLineParser.getHelpString(TestConf.class));
+    Assert.assertEquals("[range <number>] [rangefactor <fraction>] [profile <text>] [off|nearest|smart] [target off|nearest|smart]", CommandLineParser.getHelpString(TestConf.class));
   }
 
   @Test
@@ -23,6 +23,41 @@ public class CommandLineParserTest {
     CommandLineParser.parse(conf, "profile burn");
 
     Assert.assertEquals("burn", conf.profile);
+  }
+
+  @Test
+  public void shouldParseQuotedString() {
+    CommandLineParser.parse(conf, "profile \"burn 2\"");
+
+    Assert.assertEquals("burn 2", conf.profile);
+  }
+
+  @Test
+  public void shouldParseEscapedString() {
+    CommandLineParser.parse(conf, "profile burn\\ 2");
+
+    Assert.assertEquals("burn 2", conf.profile);
+  }
+
+  @Test
+  public void shouldParseSingleQuotedString() {
+    CommandLineParser.parse(conf, "profile 'burn 2'");
+
+    Assert.assertEquals("burn 2", conf.profile);
+  }
+
+  @Test
+  public void shouldParseStringWithEscapedQuotes() {
+    CommandLineParser.parse(conf, "profile 'burn \\\"2\\\"'");
+
+    Assert.assertEquals("burn \"2\"", conf.profile);
+  }
+
+  @Test
+  public void shouldParseStringMultipleEscapes() {
+    CommandLineParser.parse(conf, "profile burn\\ \\\"2\\\"");
+
+    Assert.assertEquals("burn \"2\"", conf.profile);
   }
 
   @Test

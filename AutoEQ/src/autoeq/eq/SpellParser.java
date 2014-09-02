@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import autoeq.SpellData;
 import autoeq.effects.Effect;
@@ -17,7 +18,7 @@ import autoeq.modules.buff.EffectSet;
 
 public class SpellParser {
 
-  public static List<EffectSet> parseSpells(final EverquestSession session, Section section, int defaultAgro) {
+  public static List<ParsedEffectLine> parseSpells(final EverquestSession session, Section section, int defaultAgro) {
     List<EffectSet> effectSets = new ArrayList<>();
 
     List<String> spellNamePairs = section.getAll("Spell");
@@ -33,7 +34,7 @@ public class SpellParser {
         Effect effect = session.getEffect(name, agro);
 
         if(effect != null) {
-          if(effect.getSpell().getTargetType() == TargetType.SINGLE) {
+          if(effect.getSpell() == null || !effect.getSpell().getTargetType().isAreaOfEffect()) {
             singleEffect = effect;
           }
           else {
@@ -103,15 +104,18 @@ public class SpellParser {
       EffectSet effectSet = iterator.next();
 
       Spell spell = effectSet.getSingleOrGroup().getSpell();
-      SpellData sd = spell.getRawSpellData();
-      int timerId = sd.getTimerId();
 
-      if(timerId > 0 && sd.getRecastMillis() > spell.getDuration() * 1000 && seenTimerIds.contains(timerId)) {
-        System.err.println(">>> Filtered by timerId: " + effectSet);
-        iterator.remove();
+      if(spell != null) {
+        SpellData sd = spell.getRawSpellData();
+        int timerId = sd.getTimerId();
+
+        if(timerId > 0 && sd.getRecastMillis() > spell.getDuration() * 1000 && seenTimerIds.contains(timerId)) {
+          System.err.println(">>> Filtered by timerId: " + effectSet);
+          iterator.remove();
+        }
+
+        seenTimerIds.add(timerId);
       }
-
-      seenTimerIds.add(timerId);
     }
 
     /*
@@ -124,7 +128,92 @@ public class SpellParser {
       }
     }
 
-    return effectSets;
+    if(!effectSets.isEmpty()) {
+      Effect effect = effectSets.get(0).getGroupOrSingle();
+      int minimumTargets = effect.getSpell() != null && effect.getSpell().getTargetType().isAreaOfEffect() ? 2 : 1;
+
+      String minimumTargetsConf = section.get("MinimumTargets");
+
+      if(minimumTargetsConf != null) {
+        minimumTargets = Integer.parseInt(minimumTargetsConf);
+      }
+
+      List<String> conditions = section.getAll("Condition");
+      List<String> priorityAdjusts = section.getAll("PriorityAdjust");
+
+      for(String key : section.getAllKeys()) {
+        if(key.startsWith("${") && key.endsWith("}")) {
+          for(int i = 0; i < conditions.size(); i++) {
+            String condition = conditions.get(i);
+
+            conditions.set(i, condition.replaceAll(Pattern.quote(key), section.get(key)));
+          }
+
+          for(int i = 0; i < priorityAdjusts.size(); i++) {
+            String priorityAdjust = priorityAdjusts.get(i);
+
+            priorityAdjusts.set(i, priorityAdjust.replaceAll(Pattern.quote(key), section.get(key)));
+          }
+        }
+      }
+
+      List<String> gems = section.getAll("Gem");
+
+      if(gems.isEmpty()) {
+        gems.add("0");
+      }
+
+      List<ParsedEffectLine> parsedEffectLines = new ArrayList<>();
+      int counter = 1;
+
+      ParsedEffectGroup group = new ParsedEffectGroup(
+        gems,
+        section.getDefault("ValidTargets", "war pal shd mnk rog ber rng bst brd clr shm dru enc mag nec wiz"),
+        section.getAll("Profile"),
+        conditions,
+        priorityAdjusts,
+        section.get("Priority"),
+        TargetCategory.valueOf(section.getDefault("TargetType", section.getName().startsWith("Debuff.") ? "MAIN" : "ALL").toUpperCase()),
+        minimumTargets,
+        section.getAll("PostAction"),
+        section.getDefault("Announce", "false").equals("true"),
+        section.getDefault("AnnounceChannelPrefix", "/gsay"),
+        section.get("RangeExtensionFactor") != null ? Double.parseDouble(section.get("RangeExtensionFactor")) : 1.0,
+        section.get("DurationExtensionFactor") != null ? Double.parseDouble(section.get("DurationExtensionFactor")) : 1.0,
+        section.get("AdditionalDurationExtension") != null ? Long.parseLong(section.get("AdditionalDurationExtension")) * 1000 : 0,
+        section.get("GemSum")
+      );
+
+      if(gems.size() > 1) {
+        for(;;) {
+          parsedEffectLines.add(new ParsedEffectLine(
+            group,
+            section.getName() + (counter++ > 1 ? "#" + counter++ + "#" + effectSets.get(0).getSingleOrGroup() : ""),
+            Integer.parseInt(gems.get(0)),
+            effectSets
+          ));
+
+          effectSets.remove(0);
+
+          if(effectSets.isEmpty()) {
+            break;
+          }
+        }
+      }
+      else {
+        parsedEffectLines.add(new ParsedEffectLine(
+          group,
+          section.getName(),
+          Integer.parseInt(gems.get(0)),
+          effectSets
+        ));
+      }
+
+      return parsedEffectLines;
+    }
+
+    return Collections.emptyList();
   }
 
 }
+

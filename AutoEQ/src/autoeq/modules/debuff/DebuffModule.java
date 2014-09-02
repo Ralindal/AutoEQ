@@ -1,31 +1,34 @@
 package autoeq.modules.debuff;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
-import autoeq.ExpressionEvaluator;
-import autoeq.TargetPattern;
 import autoeq.ThreadScoped;
 import autoeq.effects.Effect;
-import autoeq.effects.Effect.Type;
 import autoeq.eq.ActivateEffectCommand;
 import autoeq.eq.Command;
 import autoeq.eq.EverquestSession;
-import autoeq.eq.ExpressionRoot;
+import autoeq.eq.Gem;
+import autoeq.eq.GemAssigner;
 import autoeq.eq.Me;
 import autoeq.eq.MemorizeCommand;
 import autoeq.eq.Module;
-import autoeq.eq.Priority;
+import autoeq.eq.ParsedEffectLine;
 import autoeq.eq.Spawn;
 import autoeq.eq.SpawnType;
-import autoeq.eq.SpellLine;
+import autoeq.eq.Spell;
 import autoeq.eq.SpellParser;
+import autoeq.eq.SpellUtil;
+import autoeq.eq.TargetCategory;
 import autoeq.eq.TargetType;
 import autoeq.ini.Section;
-import autoeq.modules.buff.EffectSet;
 import autoeq.modules.target.TargetModule;
 
 import com.google.inject.Inject;
@@ -33,7 +36,7 @@ import com.google.inject.Inject;
 @ThreadScoped
 public class DebuffModule implements Module {
   private final EverquestSession session;
-  private final List<DebuffLine> debuffLines = new ArrayList<>();
+  private final List<ParsedEffectLine> debuffLines = new ArrayList<>();
   private final TargetModule targetModule;
   private final Set<String> activeProfiles = new HashSet<>();
 
@@ -53,7 +56,8 @@ public class DebuffModule implements Module {
     List<Command> commands = new ArrayList<>();
     Me me = session.getMe();
 
-    if(!me.isMoving() && me.getType() == SpawnType.PC) {
+    if(!me.isMoving() && me.getType() == SpawnType.PC && !me.isCasting()) {
+      long startTime = System.currentTimeMillis();
 
       if(!session.getActiveProfiles().equals(activeProfiles)) {
         activeProfiles.clear();
@@ -62,13 +66,7 @@ public class DebuffModule implements Module {
 
         for(Section section : session.getIni()) {
           if(section.getName().startsWith("Debuff.")) {
-            List<EffectSet> effectSets = SpellParser.parseSpells(session, section, 100);
-
-            if(effectSets.size() > 0) {
-              Effect effect = effectSets.get(0).getSingleOrGroup();
-              int gem = section.get("Gem") != null ? Integer.parseInt(section.get("Gem")) : 0;
-              debuffLines.add(new DebuffLine(gem, effect, section.get("ValidTargets"), section.get("Profile"), Priority.decodePriority(session, effect, section.get("Priority"), 200), section.get("TargetType").equals("main"), section.getAll("Condition")));
-            }
+            debuffLines.addAll(SpellParser.parseSpells(session, section, 100));
           }
         }
       }
@@ -82,22 +80,22 @@ public class DebuffModule implements Module {
        * Ensure Debuffs are memmed
        */
 
-      for(DebuffLine debuffLine : debuffLines) {
-        if(session.isProfileActive(debuffLine.getProfile()) && !me.inCombat()) {
-          Effect effect = debuffLine.getEffect();
+      GemAssigner gemAssigner = new GemAssigner(session);
+      List<Gem> spellsToMemorize = new ArrayList<>();
 
-          if(effect.getType() == Effect.Type.SPELL || effect.getType() == Type.SONG) {
-            int gem = me.getGem(effect.getSpell());
+      for(ParsedEffectLine debuffLine : debuffLines) {
+        if(debuffLine.isProfileActive(session)) {
+          Gem gem = gemAssigner.getGem(debuffLine);
 
-            if(gem == 0) {
-              commands.add(new MemorizeCommand(1000, "DEBUFF", effect.getSpell(), debuffLine.getGem()));
-              return commands;
-            }
-            else {
-              me.lockSpellSlot(gem);
-            }
+          if(gem != null) {
+            spellsToMemorize.add(gem);
           }
         }
+      }
+
+      if(!spellsToMemorize.isEmpty()) {
+        commands.add(new MemorizeCommand(1000, "DEBUFF", spellsToMemorize.toArray(new Gem[0])));
+        //return commands;
       }
 
       /*
@@ -108,148 +106,164 @@ public class DebuffModule implements Module {
         mainTarget = null;
       }
 
-      LinkedHashMap<DebuffLine, List<Spawn>> targetLists = new LinkedHashMap<>();
-      boolean assisted = false;
+      LinkedHashMap<ParsedEffectLine, List<Spawn>> targetLists = new LinkedHashMap<>();
 
-      for(DebuffLine debuffLine : debuffLines) {
-        if(session.isProfileActive(debuffLine.getProfile())) {
+      mainAssist = targetModule.getMainAssist();
+
+      long millis = System.currentTimeMillis();
+      long counter = 0;
+
+      Set<Spawn> spawns = session.getSpawns(300, 300);
+      Map<ParsedEffectLine, Long> testedSpells = new HashMap<>();
+      Set<String> steps = new LinkedHashSet<>();
+
+      for(ParsedEffectLine debuffLine : debuffLines) {
+        steps.clear();
+
+        if(debuffLine.isProfileActive(session)) {
           Effect effect = debuffLine.getEffect();
 
-          if(effect.isReady()) {
+          steps.add("profile");
 
-            if(!assisted) {
-              mainAssist = targetModule.getMainAssist();
-              mainTarget = targetModule.getFromAssist();
-              assisted = true;
-            }
+          if(effect != null && effect.isReady()) {
+//            session.log("" + debuffLine);
+            steps.add("ready");
 
-            for(Spawn spawn : session.getSpawns()) {
-              if((spawn.getType() == SpawnType.NPC || !effect.getSpell().isDetrimental()) && (effect.getSpell().getRange() == 0.0 || spawn.getDistance() < effect.getSpell().getRange())) {
-                if(!spawn.isIgnored()) {
+            mainTarget = debuffLine.getTargetCategory() == TargetCategory.MAIN ? targetModule.getMainAssistTarget() : targetModule.getFromAssist() ;  // here because the result differs depending on target type and also to prevent doing /assist if nothing is ready to cast
+//            if(me.getName().equals("Belderan")) { System.out.println(">>> " + debuffLine.getTargetCategory() + " mainTarget = " + mainTarget); }
+
+            for(Spawn spawn : spawns) {
+              if(debuffLine.getTargetCategory().matches(spawn, mainTarget)) {  // Performance: This condition eliminates the bulk of targets for main targeted effects
+                steps.add("targetMatch(\\a-g" + spawn.getName() + "\\ag)");
+
+                if(!SpellUtil.findAffectedTargets(debuffLine, me, Collections.singletonList(spawn)).isEmpty()) {
+                  steps.add("affectedTarget");
+
+                  counter++;
+
     //              if(spawn.getDistance() < 75.0) {
     //                System.out.println(spawn + " ttl " + spawn.getTimeToLive());
     //              }
+  //                  if(me.getName().equals("bla") && me.getPet() == null && effect.getSpell().getName().contains("Impose") && spawn.isExtendedTarget() && spawn != mainTarget) {
+  //                    System.out.println(">>> Pot. charm for: " + spawn + "; containsEffect = " + spawn.getSpellEffects().contains(effect.getSpell()));
+  //                  }
+  //                  if(me.getName().equals("bla") && (effect.getSpell().getName().contains("Dreary Deeds") || effect.getSpell().getName().contains("Helix")) && spawn.isExtendedTarget() && spawn != mainTarget) {
+  //                    System.out.println(">>> Pot. slow for: " + spawn + "; containsEffect = " + spawn.getSpellEffects().contains(effect.getSpell()) + ", equiv=" + effect.getSpell().isEquivalent(spawn.getSpellEffects()) + "; matchesCond: " + debuffLine.matchesConditions(spawn, mainTarget, mainAssist, effect) + ": " + effect.getSpell());
+  //                  }
 
-                  if(!spawn.getSpellEffects().contains(effect.getSpell()) && !effect.getSpell().isEquivalent(spawn.getSpellEffects())) {
-                    if(debuffLine.isValidTarget(spawn, mainTarget, mainAssist, effect)) {
-                      if(spawn == mainTarget) {
-                        session.echo("DEBUFF: Considering '" + effect.getSpell() + "' for " + spawn.getName() + ", TTL=" + spawn.getMobTimeToLive() + "; Agro=" + (spawn.getMyAgro() - spawn.getTankAgro()));
+                  String noStackReason = spawn.getNoStackReason(effect.getSpell());
+
+                  if(noStackReason == null) {
+                    steps.add("willStack");
+
+                    long conditionMillis = System.currentTimeMillis();
+
+  //                  if(!spawn.getSpellEffects().contains(effect.getSpell()) && !effect.getSpell().isEquivalent(spawn.getSpellEffects())) {
+
+                    String conditionFailReason = debuffLine.getFirstNonMatchingCondition(spawn, mainTarget, mainAssist, effect);
+
+                    if(conditionFailReason == null) {
+                      steps.add("matchesConditions");
+
+                      List<Spawn> targets = targetLists.get(debuffLine);
+
+                      if(targets == null) {
+                        targets = new ArrayList<>();
+                        targetLists.put(debuffLine, targets);
                       }
 
-//                      session.echo(spawn + "; TTL = " + spawn.getTimeToLive() + "; MyAgro = " + spawn.getMyAgro() + "; TankAgro = " + spawn.getTankAgro());
-                      if(ActivateEffectCommand.checkEffect(effect, spawn)) {
-                        List<Spawn> targets = targetLists.get(debuffLine);
-
-                        if(targets == null) {
-                          targets = new ArrayList<>();
-                          targetLists.put(debuffLine, targets);
-                        }
-
-                        targets.add(spawn);
-                      }
+                      targets.add(spawn);
                     }
+                    else {
+                      steps.add("\\aoconditionMismatch(" + conditionFailReason + ")\\ag");
+                    }
+
+                    if(testedSpells.containsKey(debuffLine)) {
+                      conditionMillis -= testedSpells.get(debuffLine);
+                    }
+
+                    testedSpells.put(debuffLine, System.currentTimeMillis() - conditionMillis);
                   }
+                  else {
+                    steps.add("\\aowontStack(" + noStackReason + ")\\ag");
+                  }
+                }
+                else {
+                  steps.add("\\aounaffectedTarget\\ag");
                 }
               }
             }
           }
         }
+
+        debugEffect(debuffLine, steps);
       }
 
-      for(DebuffLine debuffLine : targetLists.keySet()) {
-        List<Spawn> targets = targetLists.get(debuffLine);
+      long loop1 = System.currentTimeMillis();
 
-        if(debuffLine.getEffect().getSpell().getTargetType() == TargetType.PBAE) {
-          if(targets.size() > 1) {
-            commands.add(new ActivateEffectCommand("DEBUFF", debuffLine, targets.toArray(new Spawn[targets.size()])));
+      for(ParsedEffectLine debuffLine : targetLists.keySet()) {
+        List<Spawn> targets = targetLists.get(debuffLine);
+        Spell spell = debuffLine.getEffect().getSpell();
+        double priority = debuffLine.determinePriority(debuffLine.getEffect(), targets.get(0), mainTarget, mainAssist);
+
+        if(spell.getTargetType().isAreaOfEffect()) {
+          if(targets.size() >= debuffLine.getMinimumTargets()) {
+            if(spell.getTargetType().isTargeted() || spell.getTargetType() == TargetType.BEAM) {
+              // Determine primary target that would affect most surrounding targets
+              List<Spawn> bestTargets = null;
+
+              for(Spawn primaryTargetCandidate : targets) {
+                List<Spawn> potentialTargets = new ArrayList<>(targets);
+
+                potentialTargets.remove(primaryTargetCandidate);
+                potentialTargets.add(0, primaryTargetCandidate);
+
+                List<Spawn> affectedTargets = SpellUtil.findAffectedTargets(debuffLine, me, potentialTargets);
+
+                if(bestTargets == null || bestTargets.size() < affectedTargets.size()) {
+                  bestTargets = affectedTargets;
+                }
+              }
+
+              if(bestTargets != null) {
+                commands.add(new ActivateEffectCommand("DEBUFF", debuffLine, priority, bestTargets));
+              }
+            }
+            else {
+              commands.add(new ActivateEffectCommand("DEBUFF", debuffLine, priority, targets));
+            }
           }
         }
         else {
-          commands.add(new ActivateEffectCommand("DEBUFF", debuffLine, targets.get(0)));
+          commands.add(new ActivateEffectCommand("DEBUFF", debuffLine, priority, targets.get(0)));
         }
+      }
+
+      if(!commands.isEmpty()) {
+        session.getLogger().finest("DebuffModules: " + (System.currentTimeMillis() - startTime) + " ms, " + commands);
+      }
+
+      if(System.currentTimeMillis() - startTime > 10) {
+        session.log("--DEBUFF: " + (System.currentTimeMillis() - startTime) + "/" + (System.currentTimeMillis() - millis) + "/" + (System.currentTimeMillis() - loop1) + " ms; counter = " + counter + "; " + testedSpells);
       }
     }
 
     return commands;
   }
 
-  private static class DebuffLine implements SpellLine {
-    private final int gem;
-    private final Effect effect;
-    private final List<String> conditions;
-    private final String profiles;
-    private final String validTargets;
-    private final boolean mainOnly;
-    private final double priority;
+  private int debugEffectLimiter = 10;
 
-    private boolean enabled = true;
-
-    public DebuffLine(int gem, Effect effect, String validTargets, String profiles, double priority, boolean mainOnly, List<String> conditions) {
-      this.gem = gem;
-      this.effect = effect;
-      this.validTargets = validTargets;
-      this.profiles = profiles;
-      this.conditions = conditions;
-      this.mainOnly = mainOnly;
-      this.priority = priority;
-    }
-
-    @Override
-    public double getPriority() {
-      return priority;
-    }
-
-    public int getGem() {
-      return gem;
-    }
-
-    /**
-     * @return the best available Debuff in this line
-     */
-    @Override
-    public Effect getEffect() {
-      return effect;
-    }
-
-    /**
-     * Checks if target is a valid target.
-     */
-    public boolean isValidTarget(Spawn target, Spawn mainTarget, Spawn mainAssist, Effect effect) {
-      boolean valid = validTargets != null ? TargetPattern.isValidTarget(validTargets, target) : true;
-
-      valid = valid && (!mainOnly || target.equals(mainTarget));
-      valid = valid && target.inLineOfSight();
-      valid = valid && effect.getSpell().isWithinLevelRestrictions(target);
-
-      if(valid) {
-        valid = ExpressionEvaluator.evaluate(conditions, new ExpressionRoot(target.getSession(), target, mainTarget, mainAssist, effect), this);
+  private void debugEffect(ParsedEffectLine debuffLine, Set<String> steps) {
+    if(debuffLine.getEffect() != null && debuffLine.getEffect().isSameAs(session.getDebugEffect())) {
+      if(debugEffectLimiter-- == 0) {
+        session.echo("\\ay[DebugEffect]\\aw " + debuffLine + " (" + debuffLine.getEffect() + "):\\ag " + steps);
+        debugEffectLimiter = 10;
       }
-
-      return valid;
-    }
-
-    public String getProfile() {
-      return profiles;
-    }
-
-    @Override
-    public boolean isEnabled() {
-      return enabled;
-    }
-
-    @Override
-    public void setEnabled(boolean enabled) {
-      this.enabled = enabled;
-    }
-
-    @Override
-    public String toString() {
-      return String.format("DebuffLine(" + effect + "; pri=%8.4f)", priority);
     }
   }
 
   @Override
-  public boolean isLowLatency() {
-    return false;
+  public int getBurstCount() {
+    return 4;
   }
 }

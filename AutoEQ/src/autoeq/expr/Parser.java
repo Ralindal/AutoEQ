@@ -1,142 +1,305 @@
 package autoeq.expr;
 
+import java.lang.reflect.Array;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import autoeq.expr.Operator.Type;
-
-
 public class Parser {
   private static final Pattern PATTERN =
-    Pattern.compile("([A-Za-z]+|-?[0-9]+(\\.[0-9]+)?|\"(\\\\.|[^\\\\\"])*\"|\\(|\\)|[^A-Za-z0-9() ]+)");
+    Pattern.compile("([_A-Za-z][_A-Za-z0-9]*|-?[0-9]+(\\.[0-9]+)?|\"(\\\\.|[^\\\\\"])*\"|\\(|\\)|[^A-Za-z0-9() ]+)");
 //    Pattern.compile("([A-Za-z]+|-?[0-9]+(\\.[0-9]+)?|\\(|\\)|[^A-Za-z0-9() ]+)");
 
   private static final Object UNDEFINED = new Object();
 
   private static final Map<String, Operator> OPERATORS = new HashMap<>();
 
+  static abstract class UnaryOperator extends Operator {
+    public UnaryOperator(String description, int level) {
+      super(description, level);
+    }
+
+    protected abstract TypedValue operate(Object value) throws SyntaxException;
+
+    @Override
+    public final TypedValue operate(TypedValue left, TypedValue root, List<Token> tokens, boolean parseOnly) throws SyntaxException {
+      if(left != null) {
+        throw new SyntaxException("Binary operator expected");
+      }
+
+      if(parseOnly) {
+        Parser.parse(root, tokens, getLevel(), parseOnly);
+        return new TypedValue(Boolean.class, null);
+      }
+      else {
+        return operate(Parser.parse(root, tokens, getLevel(), parseOnly).value);
+      }
+    }
+  }
+
+  static abstract class CustomUnaryOperator extends Operator {
+    public CustomUnaryOperator(String description, int level) {
+      super(description, level);
+    }
+
+    protected abstract TypedValue customOperate(TypedValue root, List<Token> tokens, boolean parseOnly) throws SyntaxException;
+
+    @Override
+    public final TypedValue operate(TypedValue left, TypedValue root, List<Token> tokens, boolean parseOnly) throws SyntaxException {
+      if(left != null) {
+        throw new SyntaxException("Binary operator expected");
+      }
+      return customOperate(root, tokens, parseOnly);
+    }
+  }
+
+  static abstract class BinaryOperator extends Operator {
+    public BinaryOperator(String description, int level) {
+      super(description, level);
+    }
+
+    protected abstract Object operate(Object left, Object right) throws SyntaxException;
+
+    @Override
+    public final TypedValue operate(TypedValue left, TypedValue root, List<Token> tokens, boolean parseOnly) throws SyntaxException {
+      if(left == null) {
+        throw new SyntaxException("Variable or literal expected");
+      }
+
+      if(parseOnly) {
+        return Parser.parse(root, tokens, getLevel(), parseOnly);
+      }
+      else {
+        return new TypedValue(operate(left.value, Parser.parse(root, tokens, getLevel(), parseOnly).value));
+      }
+    }
+  }
+
+  static abstract class CustomMultiOperator extends Operator {
+    public CustomMultiOperator(String description, int level) {
+      super(description, level);
+    }
+
+    protected abstract TypedValue customOperate(TypedValue left, TypedValue root, List<Token> tokens, boolean parseOnly) throws SyntaxException;
+
+    @Override
+    public final TypedValue operate(TypedValue left, TypedValue root, List<Token> tokens, boolean parseOnly) throws SyntaxException {
+      if(left == null) {
+        throw new SyntaxException("Variable or literal expected");
+      }
+      return customOperate(left, root, tokens, parseOnly);
+    }
+  }
+
   static {
-    OPERATORS.put("!", new Operator(3, Type.UNARY) {
+    OPERATORS.put("(", new CustomUnaryOperator("()", 1) {
       @Override
-      public Object operate(Object left, Object right) throws SyntaxException {
-        return !(Boolean)right;
+      public TypedValue customOperate(TypedValue root, List<Token> tokens, boolean parseOnly) throws SyntaxException {
+        int index = findMatchingParenthesis(tokens, 1);
+
+        TypedValue result = parse(root, tokens.subList(0, index), 1000, parseOnly);
+        tokens.remove(0);  // remove closing parenthesis
+
+        return result;
       }
     });
 
-    OPERATORS.put("/", new Operator(5, Type.BINARY) {
+    OPERATORS.put(".", new CustomMultiOperator(".", 2) {
       @Override
-      public Object operate(Object left, Object right) throws SyntaxException {
-        return toDouble(left) / toDouble(right);
+      protected TypedValue customOperate(TypedValue left, TypedValue root, List<Token> tokens, boolean parseOnly) throws SyntaxException {
+        Token token = tokens.remove(0);
+
+        return callMethod(root, left, tokens, parseOnly, token);
       }
     });
 
-    OPERATORS.put("*", new Operator(5, Type.BINARY) {
+    OPERATORS.put("!", new UnaryOperator("!", 3) {
       @Override
-      public Object operate(Object left, Object right) throws SyntaxException {
-        return toDouble(left) * toDouble(right);
+      public TypedValue operate(Object value) throws SyntaxException {
+        return new TypedValue(!(Boolean)value);
       }
     });
 
-    OPERATORS.put("+", new Operator(6, Type.BINARY) {
+    // TODO currently not needed because null is returned when a call cannot be made
+//    OPERATORS.put("?.", new CustomMultiOperator(2) {
+//      @Override
+//      protected Object customOperate(Object left, Object root, List<Token> tokens, boolean parseOnly) throws SyntaxException {
+//        if(left == null) {
+//          return null;
+//        }
+//        return callMethod(root, left, tokens, parseOnly, tokens.remove(0));
+//      }
+//    });
+
+    OPERATORS.put("/", new BinaryOperator("/", 5) {
+      @Override
+      public Object operate(Object left, Object right) throws SyntaxException {
+        if(left instanceof Double || right instanceof Double) {
+          return toDouble(left) / toDouble(right);
+        }
+        else {
+          return (Integer)left / (Integer)right;
+        }
+      }
+    });
+
+    OPERATORS.put("*", new BinaryOperator("*", 5) {
+      @Override
+      public Object operate(Object left, Object right) throws SyntaxException {
+        if(left instanceof Double || right instanceof Double) {
+          return toDouble(left) * toDouble(right);
+        }
+        else {
+          return (Integer)left * (Integer)right;
+        }
+      }
+    });
+
+    OPERATORS.put("+", new BinaryOperator("+", 6) {
       @Override
       public Object operate(Object left, Object right) throws SyntaxException {
         if(left instanceof String) {
           return left.toString() + right.toString();
         }
-        else {
+        else if(left instanceof Double || right instanceof Double) {
           return toDouble(left) + toDouble(right);
+        }
+        else {
+          return (Integer)left + (Integer)right;
         }
       }
     });
 
-    OPERATORS.put("-", new Operator(6, Type.BINARY) {
+    OPERATORS.put("-", new BinaryOperator("-", 6) {
       @Override
       public Object operate(Object left, Object right) throws SyntaxException {
-        return toDouble(left) - toDouble(right);
+        if(left instanceof Double || right instanceof Double) {
+          return toDouble(left) - toDouble(right);
+        }
+        else {
+          return (Integer)left - (Integer)right;
+        }
       }
     });
 
-    OPERATORS.put(">", new Operator(8, Type.BINARY) {
+    OPERATORS.put(">", new BinaryOperator(">", 8) {
       @Override
       public Object operate(Object left, Object right) throws SyntaxException {
         return toDouble(left) > toDouble(right);
       }
     });
 
-    OPERATORS.put("<", new Operator(8, Type.BINARY) {
+    OPERATORS.put("<", new BinaryOperator("<", 8) {
       @Override
       public Object operate(Object left, Object right) throws SyntaxException {
         return toDouble(left) < toDouble(right);
       }
     });
 
-    OPERATORS.put(">=", new Operator(8, Type.BINARY) {
+    OPERATORS.put(">=", new BinaryOperator(">=", 8) {
       @Override
       public Object operate(Object left, Object right) throws SyntaxException {
         return toDouble(left) >= toDouble(right);
       }
     });
 
-    OPERATORS.put("<=", new Operator(8, Type.BINARY) {
+    OPERATORS.put("<=", new BinaryOperator("<=", 8) {
       @Override
       public Object operate(Object left, Object right) throws SyntaxException {
         return toDouble(left) <= toDouble(right);
       }
     });
 
-    OPERATORS.put("==", new Operator(9, Type.BINARY) {
+    OPERATORS.put("==", new BinaryOperator("==", 9) {
       @Override
       public Object operate(Object left, Object right) throws SyntaxException {
         return isEqual(left, right);
       }
     });
 
-    OPERATORS.put("!=", new Operator(9, Type.BINARY) {
+    OPERATORS.put("!=", new BinaryOperator("!=", 9) {
       @Override
       public Object operate(Object left, Object right) throws SyntaxException {
         return !isEqual(left, right);
       }
     });
 
-    OPERATORS.put("&&", new Operator(13, Type.BINARY) {
+    OPERATORS.put("&&", new CustomMultiOperator("&&", 13) {
       @Override
-      public Object shortCutEvaluation(Object left) throws SyntaxException {
-        if(!((Boolean)left).booleanValue()) {
-          return Boolean.FALSE;
+      public TypedValue customOperate(TypedValue left, TypedValue root, List<Token> tokens, boolean parseOnly) throws SyntaxException {
+        if(parseOnly || !((Boolean)left.value).booleanValue()) {
+          Parser.parse(root, tokens, getLevel(), true);  // disregard right hand side
+          return new TypedValue(Boolean.FALSE);
         }
-        return null;
-      }
-
-      @Override
-      public Object operate(Object left, Object right) throws SyntaxException {
-        return (Boolean)left && (Boolean)right;
+        else {
+          return Parser.parse(root, tokens, getLevel(), parseOnly);
+        }
       }
     });
 
-    OPERATORS.put("||", new Operator(14, Type.BINARY) {
+    OPERATORS.put("||", new CustomMultiOperator("||", 14) {
       @Override
-      public Object shortCutEvaluation(Object left) throws SyntaxException {
-        if(((Boolean)left).booleanValue()) {
-          return Boolean.TRUE;
+      public TypedValue customOperate(TypedValue left, TypedValue root, List<Token> tokens, boolean parseOnly) throws SyntaxException {
+        if(parseOnly || ((Boolean)left.value).booleanValue()) {
+          Parser.parse(root, tokens, getLevel(), true);  // disregard right hand side
+          return new TypedValue(Boolean.TRUE);
         }
-        return null;
-      }
-
-      @Override
-      public Object operate(Object left, Object right) throws SyntaxException {
-        return (Boolean)left || (Boolean)right;
+        else {
+          return Parser.parse(root, tokens, getLevel(), parseOnly);
+        }
       }
     });
 
-    OPERATORS.put("contains", new Operator(7, Type.BINARY) {
+    OPERATORS.put("?", new CustomMultiOperator("?", 15) {
+      @Override
+      public TypedValue customOperate(TypedValue left, TypedValue root, List<Token> tokens, boolean parseOnly) throws SyntaxException {
+        TypedValue result;
+
+        if(parseOnly || (Boolean)left.value) {
+          result = Parser.parse(root, tokens, getLevel() + 1, parseOnly);
+
+          if(tokens.isEmpty() || !tokens.remove(0).getText().equals(":")) {
+            throw new SyntaxException("':' expected");
+          }
+
+          Parser.parse(root, tokens, getLevel() + 1, true);  // disregard right hand side
+        }
+        else {
+          Parser.parse(root, tokens, getLevel() + 1, true);  // disregard left hand side
+
+          if(tokens.isEmpty() || !tokens.remove(0).getText().equals(":")) {
+            throw new SyntaxException("':' expected");
+          }
+
+          result = Parser.parse(root, tokens, getLevel() + 1, parseOnly);
+        }
+
+        return result;
+      }
+    });
+
+    OPERATORS.put("?:", new CustomMultiOperator("?:", 15) {
+      @Override
+      public TypedValue customOperate(TypedValue left, TypedValue root, List<Token> tokens, boolean parseOnly) throws SyntaxException {
+        if(left.value != null) {
+          Parser.parse(root, tokens, getLevel(), true);  // disregard right hand side
+          return left;
+        }
+        else {
+          return Parser.parse(root, tokens, getLevel(), parseOnly);
+        }
+      }
+    });
+
+    OPERATORS.put("contains", new BinaryOperator("contains", 7) {
       @Override
       public Object operate(Object left, Object right) throws SyntaxException {
         return ((Collection<?>)left).contains(right);
@@ -147,6 +310,9 @@ public class Parser {
   public static double toDouble(Object o) throws SyntaxException {
     if(o instanceof Integer) {
       return ((Integer)o).doubleValue();
+    }
+    else if(o instanceof Long) {
+      return ((Long)o).doubleValue();
     }
     else if(o instanceof Double) {
       return (Double)o;
@@ -184,7 +350,25 @@ public class Parser {
     }
   }
 
-  public static Object parse(Object root, String expr) throws SyntaxException {
+  public static class Script {
+    private final String expr;
+    private final List<Token> tokens;
+
+    public Script(String expr, List<Token> tokens) {
+      this.expr = expr;
+      this.tokens = tokens;
+    }
+
+    public List<Token> getTokens() {
+      return tokens;
+    }
+
+    public String getExpr() {
+      return expr;
+    }
+  }
+
+  public static Script compile(Class<?> rootClass, String expr) {
     List<Token> tokens = new ArrayList<>();
     Matcher matcher = PATTERN.matcher(expr);
     int skippedStart = 0;
@@ -194,171 +378,244 @@ public class Parser {
       skippedStart = matcher.end();
     }
 
+    return new Script(expr, tokens);
+  }
+
+  public static Object run(Object root, Script script) throws SyntaxException {
     try {
-      List<Object> result = parse(root, tokens, 99, false);
+      List<TypedValue> result = parseList(root == null ? null : new TypedValue(root), new ArrayList<>(script.getTokens()), false);
 //      System.out.println(expr + " = " + result);
 
-      return result.get(result.size() - 1);
+      return result.get(result.size() - 1).value;
     }
     catch(SyntaxException e) {
       char[] spaces = new char[e.getToken().getPosition()];
       Arrays.fill(spaces, ' ');
 
-      throw new SyntaxException("Syntax error near " + e.getToken() + ": " + e.getMessage() + "\n" + expr + "\n" + String.valueOf(spaces) + "^\n", e);
+      throw new SyntaxException("Syntax error near " + e.getToken() + ": " + e.getMessage() + "\n" + script.getExpr() + "\n" + String.valueOf(spaces) + "^\n", e.getToken(), e);
     }
     catch(Exception e) {
-      throw new RuntimeException("Exception while parsing: " + expr, e);
+      throw new RuntimeException("Exception while parsing: " + script.getExpr(), e);
     }
   }
 
-  private static Object parseSingleResult(Object root, List<Token> tokens, int level, boolean parseOnly) throws SyntaxException {
-    List<Object> results = parse(root, tokens, level, parseOnly);
+  public static Object parseUncached(Object root, String expr) throws SyntaxException {
+    Script script = compile(root == null ? null : root.getClass(), expr);
 
-    return results.get(results.size() - 1);
+    return run(root, script);
+  }
+
+  private static final Map<String, Script> CACHE = new HashMap<>();
+
+  public static Object parse(Object root, String expr) throws SyntaxException {
+    Script script = CACHE.get(expr);
+
+    if(script == null) {
+      System.out.println("PARSER: Compiling: " + expr);
+      script = compile(root == null ? null : root.getClass(), expr);
+      CACHE.put(expr, script);
+    }
+
+    long startMillis = System.currentTimeMillis();
+    Object result = run(root, script);
+    long runDuration = System.currentTimeMillis() - startMillis;
+
+    if(runDuration > 3) {
+      System.out.println("PARSER: " + runDuration + " ms for: " + expr);
+    }
+
+    return result;
   }
 
   private static Pattern IDENTIFIER = Pattern.compile("[_A-Za-z][_A-Za-z0-9]*");
+  private static Pattern BOOLEAN = Pattern.compile("(true|false)");
   private static Pattern INTEGER = Pattern.compile("-?[0-9]+");
   private static Pattern FLOAT = Pattern.compile("-?[0-9]+(\\.[0-9]+)?");
 
-  private static List<Object> parse(Object root, List<Token> tokens, int level, boolean parseOnly) throws SyntaxException {
-    if(tokens.size() == 0) {
-      throw new SyntaxException("Token expected");
-    }
+  private static List<TypedValue> parseList(TypedValue root, List<Token> tokens, boolean parseOnly) throws SyntaxException {
+    final List<TypedValue> results = new ArrayList<>();
 
-    final List<Object> results = new ArrayList<>();
-    Object result = UNDEFINED;
-    boolean operatorExpected = false;
+    while(!tokens.isEmpty()) {
+      results.add(parse(root, tokens, 1000, parseOnly));
 
-    while(tokens.size() > 0) {
-      Token token = tokens.remove(0);
+      if(!tokens.isEmpty()) {
+        Token token = tokens.remove(0);
 
-      Operator operator = OPERATORS.get(token.getText());
-//      System.err.println("Getting operator for '" + token.getText() + "' -> " + operator + " : result = " + result);
-
-      if(operator != null) {
-        if(operator.getType() == Type.UNARY && result != UNDEFINED) {
-          throw new SyntaxException("Binary operator expected", token);
-        }
-        if(operator.getType() == Type.BINARY && result == UNDEFINED) {
-          throw new SyntaxException("Variable or literal expected", token);
-        }
-
-        if(level < operator.getLevel()) {
-          // Operator found has lower precedence than current operator.  Return the
-          // result and let the caller handle this operator instead.
-          tokens.add(0, token);
-          results.add(result);
-          return results;
-        }
-
-        if(!parseOnly) {
-          try {
-            Object left = result;
-
-            result = operator.shortCutEvaluation(left);
-            if(result == null) {
-              result = operator.operate(left, parseSingleResult(root, tokens, operator.getLevel(), parseOnly));
-            }
-            else {
-              parseSingleResult(root, tokens, operator.getLevel(), true);  // result discarded as known already, just parse rest of tree
-            }
-          }
-          catch(SyntaxException e) {
-            if(e.getToken() == null) {
-              e.setToken(token);
-            }
-            throw e;
-          }
-        }
-        else {
-          result = parseSingleResult(root, tokens, operator.getLevel(), true);  // result discarded later, but intermediate results needed for correct parsing
-        }
-      }
-      else if(operatorExpected) {
-        if(token.getText().equals(",")) {
-          results.add(result);
-          result = UNDEFINED;
-          operatorExpected = false;
-        }
-        else if(token.getText().equals(".")) {
-          result = callMethod(root, result, tokens, parseOnly, tokens.remove(0));
-
-//          try {
-//            result = readProperty(result, tokens.remove(0).getText());
-//          }
-//          catch(NoSuchMethodException e) {
-//            throw new SyntaxException("Unknown member of " + result + ": " + token.getText(), token);
-//          }
-        }
-        else {
+        if(!token.getText().equals(",")) {
           throw new SyntaxException("Operator expected", token);
         }
       }
-      else {
-        if(token.getText().equals("null")) {
-          result = null;
-        }
-        else if(token.matches(IDENTIFIER) && !token.getText().equals("contains")) {
-          result = callMethod(root, root, tokens, parseOnly, token);
-        }
-        else if(token.matches(INTEGER)) {
-          result = Integer.parseInt(token.getText());
-        }
-        else if(token.matches(FLOAT)) {
-          result = Double.parseDouble(token.getText());
-        }
-        else if(token.getText().equals("(")) {
-          tokens.add(0, token);
-          int index = findMatchingParenthesis(tokens);
-
-          result = parseSingleResult(root, tokens.subList(1, index), 99, parseOnly);
-          tokens.remove(0);  // remove opening parenthesis
-          tokens.remove(0);  // remove closing parenthesis
-        }
-        else if(token.getText().startsWith("\"")) {
-          String t = token.getText();
-
-          if(!t.endsWith("\"")) {
-            throw new SyntaxException("Unclosed string", token);
-          }
-          result = t.substring(1, t.length() - 1);
-        }
-        else {
-          throw new SyntaxException("Variable or literal expected", token);
-        }
-
-        operatorExpected = true;
-      }
     }
-
-    results.add(result);
 
     return results;
   }
 
-  private static Object callMethod(Object root, Object parent, List<Token> tokens, boolean parseOnly, Token token) throws SyntaxException {
-    try {
-      if(tokens.size() > 0 && tokens.get(0).getText().equals("(")) {
-        List<Object> parameters = parse(root, tokens.subList(1, findMatchingParenthesis(tokens)), 99, parseOnly);
-        tokens.remove(0);
-        tokens.remove(0);
+  static final class TypedValue {
+    final Class<?> type;
+    final Object value;
 
-        return callMethod(parent, token.getText(), parameters);
-      }
-      else {
-        return readProperty(parent, token.getText());
+    TypedValue(Class<?> type, Object value) {
+      this.type = type;
+      this.value = value;
+
+      if(value instanceof TypedValue) {
+        throw new RuntimeException("cannot nest TypedValue objects");
       }
     }
-    catch(NoSuchMethodException e) {
-      throw new SyntaxException("Unknown member of " + parent + ": " + token.getText(), token, e);
+
+    TypedValue(Object value) {
+      if(value == null) {
+        throw new RuntimeException("cannot determine type of null");
+      }
+      if(value instanceof TypedValue) {
+        throw new RuntimeException("cannot nest TypedValue objects");
+      }
+
+      this.type = value.getClass();
+      this.value = value;
+    }
+
+    @Override
+    public String toString() {
+      return "TypedValue(" + type + "=" + value + ")";
     }
   }
 
-  private static int findMatchingParenthesis(List<Token> tokens) throws SyntaxException {
-    // find matching bracket
-    int openCount = 0;
+  static TypedValue parse(TypedValue root, List<Token> tokens, int level, boolean parseOnly) throws SyntaxException {
+    if(tokens.isEmpty()) {
+      throw new SyntaxException("Expression expected");
+    }
 
+    TypedValue result = null;
+    boolean operatorRequired = false;
+
+    while(!tokens.isEmpty()) {
+      Token token = tokens.get(0);
+      String text = token.getText();
+      Operator operator = OPERATORS.get(text);
+//      System.out.println("Getting operator for " + token + " -> " + operator + "; parseOnly=" + parseOnly + "; operatorRequired=" + operatorRequired + ";parentOperator.level=" + level + " : result = " + result);
+
+      if((operator == null && operatorRequired) || (operator != null && level <= operator.getLevel())) {
+        break;
+      }
+
+      tokens.remove(0);
+
+      if(operator != null) {
+        try {
+          result = operator.operate(result, root, tokens, parseOnly);
+//          System.out.println("Result of operate " + operator + " was: " + result);
+          operatorRequired = true;
+        }
+        catch(SyntaxException e) {
+          if(e.getToken() == null) {
+            e.setToken(token);
+          }
+          throw e;
+        }
+      }
+      else {
+        if(token.isLiteralResolved()) {
+          result = token.getLiteral();
+        }
+        else if(token.getResolvedMethod() != null) {
+          result = callMethod(root, root, tokens, false, token);
+        }
+        else {
+          if(text.equals("null")) {
+            result = new TypedValue(Object.class, null);
+            token.setLiteral(result);
+          }
+          else if(token.matches(BOOLEAN)) {
+            result = new TypedValue(Boolean.parseBoolean(text));
+            token.setLiteral(result);
+          }
+          else if(token.matches(INTEGER)) {
+            result = new TypedValue(Integer.parseInt(text));
+            token.setLiteral(result);
+          }
+          else if(token.matches(FLOAT)) {
+            result = new TypedValue(Double.parseDouble(text));
+            token.setLiteral(result);
+          }
+          else if(token.matches(IDENTIFIER) && !text.equals("contains")) {
+            result = callMethod(root, root, tokens, false, token);
+          }
+          else if(text.startsWith("\"")) {
+            if(!text.endsWith("\"")) {
+              throw new SyntaxException("Unclosed string", token);
+            }
+
+            result = new TypedValue(text.substring(1, text.length() - 1).replaceAll("\\\\\"", "\""));
+            token.setLiteral(result);
+          }
+          else {
+            throw new SyntaxException("Expression expected", token);
+          }
+        }
+
+        operatorRequired = true;
+      }
+    }
+
+//    System.out.println("Leaving level " + level + " with " + result);
+
+    return result;
+  }
+
+  private static TypedValue callMethod(TypedValue root, TypedValue parent, List<Token> tokens, boolean parseOnly, Token token) throws SyntaxException {
+    List<TypedValue> parameters = null;
+
+    try {
+      if(tokens.size() > 0 && tokens.get(0).getText().equals("(")) {
+        parameters = parseList(root, tokens.subList(1, findMatchingParenthesis(tokens, 0)), parseOnly);
+        tokens.remove(0);
+        tokens.remove(0);
+      }
+      else {
+        parameters = Collections.emptyList();
+      }
+
+      Method method = token.getResolvedMethod();
+
+      if(method == null) {
+        method = findMethod(parent.type, token.getText(), parameters);
+        token.setResolvedMethod(method);
+      }
+
+      if(parseOnly) {
+        return new TypedValue(method.getReturnType(), null);
+      }
+
+      if(parent.value == null) {
+        return new TypedValue(parent.type, null);
+      }
+
+      Object[] parameterValues = new Object[parameters.size()];
+
+      for(int i = 0; i < parameters.size(); i++) {
+        TypedValue typedValue = parameters.get(i);
+
+        parameterValues[i] = typedValue.value;
+      }
+
+      MethodCall methodCall = createMethodCall(method, parameterValues);
+
+      try {
+        // TODO This calls the method, even in parseOnly mode as we need somekind of "result" to return that can be identified by its Class (so null wouldn't do) -- this is actually not a good situation as it means that later method selection can change at runtime depending on the return value type of this call...
+        return new TypedValue(method.getReturnType(), methodCall.invoke(parent.value));
+      }
+      catch(IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
+        throw new RuntimeException("Could not call " + methodCall.method + " with instance [" + parent + "] and parameters " + Arrays.toString(methodCall.parms), e);
+      }
+    }
+    catch(NoSuchMethodException e) {
+      throw new SyntaxException("Unknown member of " + parent + ": " + token.getText() + "(" + parameters + ")", token, e);
+    }
+  }
+
+  private static int findMatchingParenthesis(List<Token> tokens, int openCount) throws SyntaxException {
+    // find matching bracket
     for(int i = 0; i < tokens.size(); i++) {
       if(tokens.get(i).getText().equals("(")) {
         openCount++;
@@ -373,230 +630,168 @@ public class Parser {
     throw new SyntaxException("Unmatched open parenthesis", tokens.get(0));
   }
 
-//  private static Object parse(Object root, List<Token> tokens, int level) throws SyntaxException {
-//    if(tokens.size() == 0) {
-//      throw new SyntaxException("Token expected");
-//    }
-//
-//    Object result = null;
-//    boolean literalExpected = true;
-//
-//    nextToken:
-//    while(tokens.size() > 0) {
-//      Token token = tokens.remove(0);
-//
-//      if(token.getText().equals("null") && literalExpected) {
-//        result = null;
-//        literalExpected = false;
-//      }
-//      else if(token.matches("[A-Za-z]+") && !token.getText().equals("contains") && literalExpected) {
-//        List<Object> parameters = new ArrayList<Object>();
-//
-//        if(tokens.get(0).getText().equals("(")) {
-//          tokens.remove(0);
-//
-//          int openCount = 1;
-//          int tokenIndex = 0;
-//
-//          while(tokenIndex < tokens.size()) {
-//            String text = tokens.get(tokenIndex).getText();
-//            System.err.println(" > (" + tokenIndex + ") " + text);
-//
-//            if(text.equals("(")) {
-//              openCount++;
-//            }
-//            else if(text.equals(")")) {
-//              if(--openCount == 0) {
-//                parameters.add(parse(root, tokens.subList(0, tokenIndex), 99));
-//                tokens.remove(0);
-//                tokenIndex = 0;
-//                break;
-//              }
-//            }
-//            else if(openCount == 1 && text.equals(",")) {
-//              parameters.add(parse(root, tokens.subList(0, tokenIndex), 99));
-//              tokens.remove(0);
-//              tokenIndex = 0;
-//            }
-//            tokenIndex++;
-//          }
-//
-//          if(openCount != 0) {
-//            throw new SyntaxException("Unmatched open parenthesis", token);
-//          }
-//
-//          System.err.println("Result of bracket evaluation: " + parameters);
-//        }
-//
-//        try {
-//          result = readProperty(root, token.getText());
-//          literalExpected = false;
-//        }
-//        catch(NoSuchMethodException e) {
-//          throw new SyntaxException("Unknown member of " + root + ": " + token.getText(), token);
-//        }
-//      }
-//      else if(token.matches("-?[0-9]+") && literalExpected) {
-//        result = Integer.parseInt(token.getText());
-//        literalExpected = false;
-//      }
-//      else if(token.getText().equals(".")) {
-//        try {
-//          result = readProperty(result, tokens.remove(0).getText());
-//        }
-//        catch(NoSuchMethodException e) {
-//          throw new SyntaxException("Unknown member of " + result + ": " + token.getText(), token);
-//        }
-//      }
-//      else if(token.getText().equals("(") && literalExpected) {
-//        // find matching bracket
-//        int openCount = 1;
-//        for(int i = 0; i < tokens.size(); i++) {
-//          if(tokens.get(i).getText().equals("(")) {
-//            openCount++;
-//          }
-//          else if(tokens.get(i).getText().equals(")")) {
-//            if(--openCount == 0) {
-//              result = parse(root, tokens.subList(0, i), 99);
-//              tokens.remove(0);
-//              break;
-//            }
-//          }
-//        }
-//
-//        if(openCount != 0) {
-//          throw new SyntaxException("Unmatched open parenthesis", token);
-//        }
-//      }
-//      else if(token.getText().startsWith("\"")) {
-//        String t = token.getText();
-//
-//        if(!t.endsWith("\"")) {
-//          throw new SyntaxException("Unclosed string", token);
-//        }
-//        result = t.substring(1, t.length() - 1);
-////        String s = "";
-////
-////        for(;;) {
-////          if(tokens.size() == 0) {
-////            throw new SyntaxException("Unclosed string", token);
-////          }
-////          token = tokens.remove(0);
-////          String t = token.getText();
-////          s += token.getSeparator();
-////          if(t.equals("\"")) {
-////            break;
-////          }
-////          s += t;
-////        }
-////
-////        result = s;
-//      }
-//      else {
-//        for(Operator operator : OPERATORS) {
-//          if(operator.getToken().equals(token.getText())) {
-//            if(level < operator.getLevel()) {
-//              tokens.add(0, token);
-//              return result;
-//            }
-//
-//            try {
-//              result = operator.operate(result, parse(root, tokens, operator.getLevel()));
-//              continue nextToken;
-//            }
-//            catch(SyntaxException e) {
-//              if(e.getToken() == null) {
-//                e.setToken(token);
-//              }
-//              throw e;
-//            }
-//          }
-//        }
-//
-//        throw new SyntaxException("Operator expected", token);
-//      }
-//    }
-//
-//    return result;
-//  }
+  static class MethodCall {
+    private final Method method;
+    private final Object[] parms;
 
-
-  private static Object readProperty(Object root, String propertyName) throws NoSuchMethodException {
-    if(root == null) {
-      return null;
+    MethodCall(Method method, Object... parms) {
+      this.method = method;
+      this.parms = parms;
     }
 
-    try {
-      Method method;
-
-      try {
-        method = root.getClass().getMethod(propertyName, (Class[])null);
-      }
-      catch(NoSuchMethodException e) {
-        method = root.getClass().getMethod("get" + propertyName.substring(0, 1).toUpperCase() + propertyName.substring(1), (Class[])null);
-      }
-
-      return method.invoke(root, (Object[])null);
-    }
-    catch(SecurityException e) {
-      throw new RuntimeException(e);
-    }
-    catch(IllegalAccessException e) {
-      throw new RuntimeException(e);
-    }
-    catch(InvocationTargetException e) {
-      throw new RuntimeException(e);
+    Object invoke(Object obj) throws IllegalAccessException, IllegalArgumentException, InvocationTargetException {
+      return method.invoke(obj, parms);
     }
   }
 
-  private static Object callMethod(Object root, String propertyName, List<Object> parameters) throws NoSuchMethodException {
+  private static Method findMethod(Class<?> rootClass, String propertyName, List<TypedValue> parameters) throws NoSuchMethodException {
     try {
       Method method;
 
-      method = searchForMethod(root.getClass(), propertyName, parameters.toArray());
+      Class<?>[] parameterClasses = new Class<?>[parameters.size()];
+
+      for(int i = 0; i < parameters.size(); i++) {
+        TypedValue typedValue = parameters.get(i);
+
+        parameterClasses[i] = typedValue.type;
+      }
+
+      method = searchForMethod(rootClass, propertyName, parameterClasses);
 
       if(method == null) {
-        method = searchForMethod(root.getClass(), "get" + propertyName.substring(0, 1).toUpperCase() + propertyName.substring(1), parameters.toArray());
+        method = searchForMethod(rootClass, "get" + propertyName.substring(0, 1).toUpperCase() + propertyName.substring(1), parameterClasses);
+
+        if(method == null) {
+          method = searchForMethod(rootClass, "is" + propertyName.substring(0, 1).toUpperCase() + propertyName.substring(1), parameterClasses);
+
+          if(method != null && method.getReturnType() != Boolean.class && method.getReturnType() != boolean.class) {
+            method = null;
+          }
+        }
       }
 
       if(method == null) {
         throw new NoSuchMethodException(propertyName);
       }
 
-      return method.invoke(root, InspectionUtils.convertSourcesToBeCompatible(method.getParameterTypes(), parameters.toArray()));
+      return method;
     }
     catch(SecurityException e) {
       throw new RuntimeException(e);
     }
-    catch(IllegalAccessException e) {
-      throw new RuntimeException(e);
-    }
-    catch(InvocationTargetException e) {
-      throw new RuntimeException(e);
-    }
   }
 
-  private static Method searchForMethod(Class<?> type, String name, Object... parms) {
-    Method[] methods = type.getMethods();
+  private static MethodCall createMethodCall(Method method, Object... parameters) {
+    Class<?>[] types = method.getParameterTypes();
 
-    for(int i = 0; i < methods.length; i++) {
-      // Has to be named the same of course.
-      if(!methods[i].getName().equals(name)) {
-        continue;
+    if(method.isVarArgs()) {
+      parameters = transformParametersForVarArgs(types.length, types[types.length - 1].getComponentType(), parameters);
+    }
+
+    return new MethodCall(method, InspectionUtils.convertSourcesToBeCompatible(types, parameters));
+  }
+
+  /**
+   * Returns all super types in most specific to least specific order.
+   */
+  private static List<Class<?>> getAllSuperTypes(Class<?> type) {
+    List<Class<?>> superTypes = new ArrayList<>();
+    List<Class<?>> todoList = new ArrayList<>();
+
+    todoList.add(type);
+
+    while(!todoList.isEmpty()) {
+      Class<?> currentType = todoList.remove(0);
+
+      if(currentType.getSuperclass() != null) {
+        todoList.add(currentType.getSuperclass());
       }
 
-      Class<?>[] types = methods[i].getParameterTypes();
-
-      // Does it have the same number of arguments that we're looking for.
-      if(types.length != parms.length) {
-        continue;
+      for(Class<?> iface : currentType.getInterfaces()) {
+        todoList.add(iface);
       }
 
-      // Check for type compatibility
-      if(InspectionUtils.areTypesAlmostCompatible(types, parms)) {
-        return methods[i];
+      superTypes.add(currentType);
+    }
+
+    return superTypes;
+  }
+
+  private static Method searchForMethod(Class<?> baseType, String name, Class<?>... parameterClasses) {
+    List<Class<?>> allSuperTypes = getAllSuperTypes(baseType);
+    Collections.reverse(allSuperTypes);
+
+    for(Class<?> type : allSuperTypes) {
+      Method[] methods = type.getDeclaredMethods();
+
+      for(int i = 0; i < methods.length; i++) {
+        // Has to be named the same of course.
+        if(!methods[i].getName().equals(name)) {
+          continue;
+        }
+
+        Class<?>[] types = methods[i].getParameterTypes();
+        Class<?>[] newParameterClasses = parameterClasses;
+
+        if(methods[i].isVarArgs() && willParametersMatchVarArgs(types.length, types[types.length - 1].getComponentType(), newParameterClasses)) {
+          newParameterClasses = Arrays.copyOf(newParameterClasses, types.length);
+          newParameterClasses[types.length - 1] = Array.newInstance(types[types.length - 1].getComponentType(), 0).getClass();
+        }
+
+        // Does it have the same number of arguments that we're looking for.
+        if(types.length != newParameterClasses.length) {
+          continue;
+        }
+
+        // Check for type compatibility
+        if(InspectionUtils.areTypesAlmostCompatible(types, newParameterClasses)) {
+          return methods[i];
+  //        return new MethodCall(methods[i], InspectionUtils.convertSourcesToBeCompatible(types, parms));
+        }
       }
     }
+
     return null;
+  }
+
+  private static Object[] transformParametersForVarArgs(int totalParameters, Class<?> varArgType, Object... parms) {
+    if(totalParameters > parms.length + 1) {
+      // Will never match, just return original
+      return parms;
+    }
+
+    Object[] newParms = Arrays.copyOf(parms, totalParameters);
+    Object[] varArgsArray = (Object[])Array.newInstance(varArgType, parms.length + 1 - totalParameters);
+
+    newParms[totalParameters - 1] = varArgsArray;
+
+    // Check if all parameters that must be part of the varargs array are compatible:
+    for(int i = totalParameters - 1; i < parms.length; i++) {
+      try {
+        varArgsArray[i - totalParameters + 1] = InspectionUtils.convertToType(varArgType, parms[i]);
+      }
+      catch(IllegalArgumentException e) {
+        // Unable to make all types match, return original array
+        return parms;
+      }
+    }
+
+    return newParms;
+  }
+
+  private static boolean willParametersMatchVarArgs(int totalParameters, Class<?> varArgType, Class<?>... parameterClasses) {
+    if(totalParameters > parameterClasses.length + 1) {
+      // Will never match, just return original
+      return false;
+    }
+
+    // Check if all parameters that must be part of the varargs array are compatible:
+    for(int i = totalParameters - 1; i < parameterClasses.length; i++) {
+      if(!InspectionUtils.isTypeAlmostCompatible(varArgType, parameterClasses[i])) {
+        return false;
+      }
+    }
+
+    return true;
   }
 }

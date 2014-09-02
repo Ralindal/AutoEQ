@@ -19,15 +19,15 @@ import com.google.inject.Inject;
 public class MeditationModule implements Module {
   private final EverquestSession session;
   private final long sitDelay = 3000;
-  
+
   private long delayUntil;
   private boolean wasSitting;
   private boolean active = true;
-  
+
   @Inject
   public MeditationModule(final EverquestSession session) {
     this.session = session;
-    
+
     session.addUserCommand("med", Pattern.compile("(on|off|status)"), "(on|off|status)", new UserCommand() {
       @Override
       public void onCommand(Matcher matcher) {
@@ -37,7 +37,7 @@ public class MeditationModule implements Module {
         else if(matcher.group(1).toLowerCase().equals("off")) {
           active = false;
         }
-      
+
         session.doCommand("/echo ==> Medding is " + (active ? "on" : "off") + ".");
       }
     });
@@ -46,32 +46,32 @@ public class MeditationModule implements Module {
   public int getPriority() {
     return 9;
   }
-  
+
   @Override
   public List<Command> pulse() {
     Me me = session.getMe();
-    
+
     if(!active) {
       return null;
     }
-    
+
     if(me.isMounted()) {
       return null;
     }
-    
+
     // TODO isCasting is never true here... cause nobody is allowed to do module stuff while casting.
-    
-    if(me.wasCasting(3500) || me.isMoving() || me.getCombatState() == CombatState.COMBAT) {
+
+    if(me.wasCasting(3500) || me.isMoving() || me.getMeleeStatus().contains("MELEE") || me.getCombatState() == CombatState.COMBAT) {
       delayUntil = System.currentTimeMillis() + sitDelay;
     }
-    
+
     if(delayUntil < System.currentTimeMillis()) {
       boolean isSitting = me.isSitting();
-      
+
       // System.out.println("isSitting = " + isSitting);
-      
+
       // Seems broken, me isSitting...
-      
+
       if(isSitting) {
         if(!wasSitting) {
           delayUntil = System.currentTimeMillis() + sitDelay;
@@ -93,15 +93,15 @@ public class MeditationModule implements Module {
           delayUntil = System.currentTimeMillis() + sitDelay;
         }
       }
-      
+
       wasSitting = isSitting;
     }
-    
+
     return null;
   }
-  
+
   @Override
-  public boolean isLowLatency() {
-    return false;
+  public int getBurstCount() {
+    return 8;
   }
 }

@@ -2,7 +2,6 @@ package autoeq.eq;
 
 import autoeq.effects.Effect;
 
-
 public class ExpressionRoot {
   private final Spawn target;
   private final Spawn mainTarget;
@@ -24,6 +23,10 @@ public class ExpressionRoot {
 
   public Me me() {
     return session.getMe();
+  }
+
+  public Group group() {
+    return session.getMe().getGroup();
   }
 
   public Spawn target() {

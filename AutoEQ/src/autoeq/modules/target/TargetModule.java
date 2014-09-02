@@ -1,5 +1,6 @@
 package autoeq.modules.target;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -24,7 +25,17 @@ import com.google.inject.Inject;
 
 @ThreadScoped
 public class TargetModule implements Module {
-  private static final double TARGET_OVERRIDE_SCORE = 10000;
+  private static final double TARGET_OVERRIDE_SCORE = 1000000;  // Switches to the highest scoring target if that target minus the current target score is above this score
+  private static final double TARGET_IN_CAMP_OVERRIDE_SCORE = 10000;  // Switches to highest scoring target if above this score and if current target is not above this score
+  private static final double OVERRIDE_ALWAYS_PRI1 = TARGET_OVERRIDE_SCORE * 8;
+  private static final double OVERRIDE_ALWAYS_PRI2 = TARGET_OVERRIDE_SCORE * 4;
+  private static final double OVERRIDE_ALWAYS_PRI3 = TARGET_OVERRIDE_SCORE * 2;
+  private static final double OVERRIDE_IN_CAMP_PRI1 = TARGET_IN_CAMP_OVERRIDE_SCORE * 8;
+  private static final double OVERRIDE_IN_CAMP_PRI2 = TARGET_IN_CAMP_OVERRIDE_SCORE * 4;
+  private static final double OVERRIDE_IN_CAMP_PRI3 = TARGET_IN_CAMP_OVERRIDE_SCORE * 2;
+  private static final double TARGET_PRI1 = TARGET_IN_CAMP_OVERRIDE_SCORE / 2;
+  private static final double TARGET_PRI2 = TARGET_IN_CAMP_OVERRIDE_SCORE / 4;
+  private static final double TARGET_PRI3 = TARGET_IN_CAMP_OVERRIDE_SCORE / 8;
 
   private final EverquestSession session;
 
@@ -34,6 +45,7 @@ public class TargetModule implements Module {
 
   private TargetConf conf = new TargetConf();
   private String[] names;
+  private long targetDelay;
 
   private final CampModule campModule;
 
@@ -46,6 +58,10 @@ public class TargetModule implements Module {
 
     if(section == null) {
       section = session.getIni().getSection("Target");
+
+      if(section == null) {
+        section = new Section("Assist", new ArrayList<Section>());
+      }
     }
 
     if(section.get("Active") != null) {
@@ -68,7 +84,7 @@ public class TargetModule implements Module {
 
         conf = newConf;
 
-        session.echo("==> Target acquirement is " + (conf.getMode() == Mode.OFF ? "off" : "on") + ".  Mode is: " + conf.getMode() + ".  Range is " + conf.getRange() + ".");
+        session.echo("==> Target acquirement is " + (conf.getMode() == Mode.OFF ? "off" : "on") + ".  Mode is: " + conf.getMode() + ".  Range is " + conf.getRange() + ". ZRange is " + conf.getZRange() + "." + (conf.getDelay() > 0 ? " Delay is " + conf.getDelay() + "s." : "") + (conf.isFriendly() ? " Targetting friendly targets." : "") + (conf.getMainAssist() != null && !conf.getMainAssist().isEmpty() ? " Main Assist is " + conf.getMainAssist() : ""));
       }
     });
   }
@@ -82,7 +98,7 @@ public class TargetModule implements Module {
     if(spawn.isEnemy()) {
       if(TargetPattern.isValidTarget(validTargets, spawn)) {
         if(ExpressionEvaluator.evaluate(conditions, new ExpressionRoot(session, spawn, null, null, null), this)) {
-          if(conf.getMode() != Mode.ASSIST || ExpressionEvaluator.evaluate(assistConditions, new ExpressionRoot(session, spawn, null, null, null), this)) {
+          if((conf.getMode() != Mode.ASSIST && conf.getMode() != Mode.ASSIST_STRICT) || ExpressionEvaluator.evaluate(assistConditions, new ExpressionRoot(session, spawn, null, getMainAssist(), null), this)) {
             return true;
           }
         }
@@ -93,38 +109,57 @@ public class TargetModule implements Module {
   }
 
   @Override
-  public boolean isLowLatency() {
-    return false;
+  public int getBurstCount() {
+    return 8;
   }
 
   private Spawn currentTarget;
 
+  /**
+   * Returns the current main target as targetted by the main assist (if in ASSIST mode), or
+   * determines a target (if one wasn't determined already).
+   *
+   * @return a main target
+   */
   public Spawn getMainAssistTarget() {
     Spawn bestTarget = currentTarget;
 
-    if(conf.getMode() != Mode.OFF) {
+    if(conf.getMode() != Mode.OFF && conf.getMode() != Mode.MANUAL) {
       Me me = session.getMe();
       boolean campSet = false;
       float x = me.getX();
       float y = me.getY();
+      int range = conf.getRange();
 
       if(campModule != null) {
         campSet = campModule.isCampSet();
         if(campSet) {
           x = campModule.getCampX();
           y = campModule.getCampY();
+          range = campModule.getCampSize();
         }
       }
 
       if(conf.getMode() == Mode.ASSIST) {
         Spawn target = getFromAssist();
+//        System.out.println(">>> mainassist has target: " + target);
 
         if(target != null) {
-          if(Math.abs(target.getZ() - me.getZ()) < 30 && target.getDistance(x, y) < conf.getRange()) {
+          if(Math.abs(target.getZ() - me.getZ()) < conf.getZRange() && target.getDistanceFromGroup(35) < conf.getRange()) {
             if(isValidTarget(target)) {
               bestTarget = target;
             }
           }
+        }
+      }
+      else if(conf.getMode() == Mode.ASSIST_STRICT) {
+        Spawn target = getFromAssist();
+
+        if(target != null && Math.abs(target.getZ() - me.getZ()) < conf.getZRange() && target.getDistanceFromGroup(35) < conf.getRange() && isValidTarget(target)) {
+          bestTarget = target;
+        }
+        else {
+          bestTarget = null;
         }
       }
       else {
@@ -132,44 +167,63 @@ public class TargetModule implements Module {
           bestTarget = session.getSpawn(bestTarget.getId());
         }
 
-        if(bestTarget != null && (!bestTarget.isEnemy() || (bestTarget.getDistance() > conf.getRange() && !me.isExtendedTarget(bestTarget)))) {
+        if(bestTarget != null && (!bestTarget.isEnemy() || !bestTarget.isAlive() || (bestTarget.getDistance() > conf.getRange() && !me.isExtendedTarget(bestTarget)))) {
           bestTarget = null;
         }
 
-        Spawn currentBestTarget = getTargetBasedOnMode(bestTarget, me, x, y);
+        if(bestTarget == null && bestTarget != currentTarget && conf.getDelay() > 0) {
+          currentTarget = null;
+          targetDelay = System.currentTimeMillis() + conf.getDelay() * 1000;
+          session.echo("TARGET: Current Target died, delaying for " + conf.getDelay() + "s");
+        }
 
-        if(bestTarget == null || !bestTarget.equals(currentBestTarget)) {
-          bestTarget = currentBestTarget;
+        if(targetDelay < System.currentTimeMillis()) {
+          Spawn currentBestTarget = getTargetBasedOnMode(bestTarget, me, x, y, range);
+          if(bestTarget == null || !bestTarget.equals(currentBestTarget)) {
+            bestTarget = currentBestTarget;
+
+            if(bestTarget != null) {
+              session.echo("TARGET: Best Target [ " + bestTarget.getName() + " ].  Level " + bestTarget.getLevel() + (bestTarget.isUnmezzable() ? ", Unmezzable" : "") + (bestTarget.isNamedMob() ? ", Named" : "") + ".");
+            }
+
+            currentTarget = bestTarget;
+    //
+    //          if(currentTarget != null) {
+    //            session.doCommand("/target id " + currentTarget.getId());
+    //          }
+          }
 
           if(bestTarget != null) {
-            session.echo("TARGET: Targetting [ " + bestTarget.getName() + " ].  Level " + bestTarget.getLevel() + (bestTarget.isUnmezzable() ? ", Unmezzable" : "") + (bestTarget.isNamedMob() ? ", Named" : "") + ".");
-          }
-
-          currentTarget = bestTarget;
-
-          if(currentTarget != null) {
-            session.doCommand("/target id " + currentTarget.getId());
+            bestTarget.increaseTankTime(2000000);  // We're assuming that when we are picking targets, we also tank them.  This may change in the future.
           }
         }
-
-        if(bestTarget != null) {
-          bestTarget.increaseTankTime(2000000);  // We're assuming that when we are picking targets, we also tank them.  This may change in the future.
-        }
+      }
+    }
+    else if(conf.getMode() != Mode.MANUAL) {
+      currentTarget = null;
+      return session.getMe().getTarget();
+    }
+    else if(conf.getMode() == Mode.MANUAL) {
+      if(conf.isSelect()) {
+        bestTarget = session.getMe().getTarget();
+        currentTarget = bestTarget;
+        conf.clearSelect();
       }
     }
 
     return bestTarget;
   }
 
-  protected Spawn getTargetBasedOnMode(Spawn currentTarget, Me me, float x, float y) {
+  protected Spawn getTargetBasedOnMode(Spawn currentTarget, Me me, float x, float y, int range) {
     Spawn bestTarget = currentTarget;
-    double currentTargetScore = getScore(currentTarget, me, x, y);
+    double currentTargetScore = getScore(currentTarget, me, x, y, range);
     double bestScore = Double.NEGATIVE_INFINITY;
 
     for(Spawn target : session.getSpawns()) {
-      double score = getScore(target, me, x, y);
+      double score = getScore(target, me, x, y, range);
 
-      if(score - currentTargetScore >= TARGET_OVERRIDE_SCORE && score > bestScore) {
+      if(score > bestScore &&
+          (score - currentTargetScore >= TARGET_OVERRIDE_SCORE || (score - currentTargetScore >= TARGET_IN_CAMP_OVERRIDE_SCORE && (currentTargetScore % TARGET_OVERRIDE_SCORE) < TARGET_IN_CAMP_OVERRIDE_SCORE))) {
         bestTarget = target;
         bestScore = score;
       }
@@ -178,8 +232,7 @@ public class TargetModule implements Module {
     return bestTarget;
   }
 
-  private double getScore(Spawn target, Me me, float x, float y) {
-    double score = Double.NEGATIVE_INFINITY;  // higher == better
+  private double getScore(Spawn target, Me me, float x, float y, int range) {
 
     /*
      * Scoring works by assigning a value to a spawn.  If the target scores TARGET_OVERRIDE_SCORE points better, than it is preferred even over the current target.
@@ -188,49 +241,99 @@ public class TargetModule implements Module {
      */
 
     if(target != null) {
-      if((!target.isIgnored() && Math.abs(target.getZ() - me.getZ()) < 30 && target.getDistance(x, y) < conf.getRange()) || me.isExtendedTarget(target)) {
-        if(isValidTarget(target)) {
-          if(conf.getMode() == Mode.OLDEST) {
+      boolean isExtendedTarget = me.isExtendedTarget(target);
+      double distanceToMe = target.getDistance(me.getX(), me.getY());
 
-            /*
-             * Always favor oldest target.
-             */
+      /*
+       * Target must be on extended target unless we also target friendly targets.
+       */
 
-            return -target.getCreationDate().getTime() * TARGET_OVERRIDE_SCORE;
-          }
-          else if(conf.getMode() == Mode.HIGHEST_LEVEL) {
+      if(conf.isFriendly() || isExtendedTarget) {
 
-            /*
-             * Favor highest level, but stays on current if target within 4 levels.
-             */
+        /*
+         * Target must be within zrange and either be an extended target or within range of us and the camp (if set)
+         */
 
-            return target.getLevel() * (TARGET_OVERRIDE_SCORE / 5);
-          }
-          else if(conf.getMode() == Mode.SMART) {
+        if(Math.abs(target.getZ() - me.getZ()) < conf.getZRange() && ((target.getDistance(x, y) < conf.getRange() && distanceToMe < conf.getRange()) || isExtendedTarget)) {
+          if(isValidTarget(target)) {
+            if(conf.getMode() == Mode.OLDEST) {
 
-            /*
-             * Favors priority targets, then unmezzables, then nameds, then by level.  Only switches
-             * for priority targets, does not switch for any other reason.
-             */
+              /*
+               * Always favor oldest target.
+               */
 
-            return target.getLevel() + (target.isPriorityTarget() ? TARGET_OVERRIDE_SCORE * 10 : 0) + (target.isUnmezzable() ? TARGET_OVERRIDE_SCORE / 2 : 0) + (target.isNamedMob() ? TARGET_OVERRIDE_SCORE / 4 : 0);
-          }
-          else if(conf.getMode() == Mode.NEAREST) {
+              return -target.getCreationDate().getTime() * TARGET_OVERRIDE_SCORE;
+            }
+            else if(conf.getMode() == Mode.HIGHEST_LEVEL) {
 
-            /*
-             * Favors nearest target, but stays on current if difference is less than 10.
-             */
+              /*
+               * Favor highest level, but stays on current if target within 4 levels.
+               */
 
-            return -target.getDistance(x, y) * (TARGET_OVERRIDE_SCORE / 10);
-          }
-          else {
-            throw new IllegalStateException("Unknown targetSelection: " + conf.getMode());
+              return target.getLevel() * (TARGET_OVERRIDE_SCORE / 5);
+            }
+            else if(conf.getMode() == Mode.SMART) {
+              if(distanceToMe < 30) {
+                distanceToMe = 0;
+              }
+
+              /*
+               * Switches for:
+               * 1) Targets that are aggro
+               * 2) Priority Targets
+               * 3) Unmezzables (if group has CC)
+               *
+               * Then:
+               * - Favors mobs in camp
+               *
+               * If not in camp:
+               * 1) Nameds
+               * 2) Non-pets
+               * 3) Current target
+               *
+               * Basically this switches whenever there is a high priority target, like an unmezzable (often nameds), an
+               * named-spawned add that needs immediate killing or when something is on extended while the current target
+               * is not.
+               *
+               * Furthermore, it will attempt to choose the first mob that will arrive in camp soon.  When everything is
+               * in camp already, it will continue to favor the high priority targets but will choose amongst the mobs in
+               * camp in the order of named, non-pet, current target.
+               */
+
+              return target.getLevel() - (distanceToMe / 100)
+                  + (isExtendedTarget ? OVERRIDE_ALWAYS_PRI1 : 0)
+                  + (target.isPriorityTarget() ? OVERRIDE_ALWAYS_PRI2 : 0)
+                  + ((target.isUnmezzable() && me.getGroup().hasClass("BRD", "ENC")) ? OVERRIDE_ALWAYS_PRI3 : 0)
+                  + ((target.getDistance() <= 35 || (target.getUnitsMoved(500) > 10 && target.getDistance() <= 70)) ? OVERRIDE_IN_CAMP_PRI1 : 0)
+                  + (target.isNamedMob() ? TARGET_PRI1 : 0)
+                  + (!target.isPet() ? TARGET_PRI2 : 0)
+                  + (target == me.getTarget() ? TARGET_PRI3 : 0);
+            }
+            else if(conf.getMode() == Mode.CAMP) {
+
+              /*
+               * Favors nearest target to camp, but stays on current if difference is less than 10.
+               */
+
+              return -target.getDistance(x, y) * (TARGET_OVERRIDE_SCORE / 10);
+            }
+            else if(conf.getMode() == Mode.NEAREST) {
+
+              /*
+               * Favors nearest target (but within camp if set), but stays on current if difference is less than 10.
+               */
+
+              return -distanceToMe * (TARGET_OVERRIDE_SCORE / 10);
+            }
+            else {
+              throw new IllegalStateException("Unknown targetSelection: " + conf.getMode());
+            }
           }
         }
       }
     }
 
-    return score;
+    return Double.NEGATIVE_INFINITY;
   }
 
   private long lastAgroMillis;
@@ -239,21 +342,43 @@ public class TargetModule implements Module {
   private Spawn lastAgroTarget;
 
   public Spawn getMainAssist() {
-    if(conf.getMode() == Mode.ASSIST) {
-      for(String mainAssist : names) {
-        Spawn spawn = session.getSpawn(mainAssist);
+    if(conf.getMode() == Mode.ASSIST || conf.getMode() == Mode.ASSIST_STRICT) {
+      String confMainAssist = conf.getMainAssist();
 
-        if(spawn != null && spawn.getDistance() < 150) {
+      if(confMainAssist != null && !confMainAssist.isEmpty()) {
+        Spawn spawn = session.getSpawn(conf.getMainAssist());
+
+        if(spawn != null) {
           return spawn;
         }
       }
+
+      for(String mainAssist : names) {
+        Spawn spawn = session.getSpawn(mainAssist);
+
+        if(spawn != null) {
+          return spawn;
+        }
+      }
+
+      return null;
     }
 
     return session.getMe();
   }
 
+  /**
+   * Gets the target currently targetted by the main assist (which can be yourself).
+   *
+   * @return the target currently targetted by the main assist
+   */
   public Spawn getFromAssist() {
     Spawn mainAssist = getMainAssist();
+
+    if(mainAssist == null) {
+      return null;
+    }
+
     Spawn target = null;
 
     if(session.getBots().contains(mainAssist)) {
@@ -294,7 +419,7 @@ public class TargetModule implements Module {
       target = lastMainTarget;
     }
 
-    if(target != null && target.isEnemy()) {
+    if(target != null && target.isEnemy() && ((target.isExtendedTarget() || mainAssist.isTargetExtendedTarget()) || session.getMe().isExtendedTargetFull() || target.isValidObjectTarget())) {
 
       /*
        * Update agro

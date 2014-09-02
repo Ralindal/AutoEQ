@@ -75,6 +75,10 @@ public class TimeToLiveAnalyzer {
     }
   }
 
+  public boolean hasTimeToLiveData(Spawn spawn) {
+    return ttlsByLevel.get(spawn.getLevel()) != null || ttlsByName.get(spawn.getName()) != null;
+  }
+
   public int getTimeToLive(Spawn spawn) {
     float[] levelTTLs = ttlsByLevel.get(spawn.getLevel());
     float[] nameTTLs = ttlsByName.get(spawn.getName());

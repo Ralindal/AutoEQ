@@ -1,16 +1,16 @@
 package autoeq.eq;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import autoeq.SpellData;
+import autoeq.Attribute;
+import autoeq.spelldata.effects.EffectDescriptor;
 
 public class Spell {
 
@@ -23,16 +23,25 @@ public class Spell {
   private final int mana;
   private final int duration;
   private final int castTime;
+  private final int myCastTime;
   private final String targetType;   // self, group v1, group v2
   private final String spellType;
   private final SpellData sd;
+  private final boolean canMGBorTGB;
   private final boolean isSlow;
   private final int maxTargetLevel;
   private final boolean isCharm;
   private final boolean isMez;
+  private final boolean isShortMez;
+  private final boolean isLongMez;
   private final boolean isHealOverTime;
   private final boolean isTwinCast;
+  private final boolean isTwinHeal;
   private final boolean isSnared;
+  private final boolean isManaHarvest;
+  private final TargetType cachedTargetType;
+  private final Set<EffectType> effectTypes;
+  private final ResistType resistType;
 
 //  private final Map<Integer, Boolean> willStackCache = new HashMap<Integer, Boolean>();
 //
@@ -52,6 +61,10 @@ public class Spell {
   public Spell(EverquestSession session, int id) {
     sd = session.getRawSpellData(id);
 
+    if(sd == null) {
+      throw new IllegalArgumentException("Cannot find spell in spell data: " + id);
+    }
+
     try {
       this.session = session;
       this.id = sd.getId();
@@ -60,54 +73,118 @@ public class Spell {
       this.range = sd.getRange();
       this.mana = sd.getMana();
       this.castTime = sd.getCastTime();
+      this.canMGBorTGB = sd.getCanMGBorTGB();
 
-      String[] infos = session.translate("${Spell[" + id + "].Level};${Spell[" + id + "].Duration.TotalSeconds};${Spell[" + id + "].TargetType};${Spell[" + id + "].SpellType}").split(";");
+      MySpell mySpell = session.getMySpell(sd);
 
-      this.level = Integer.parseInt(infos[0]);
-      this.duration = Integer.parseInt(infos[1]);
-      this.targetType = infos[2].toLowerCase();
-      this.spellType = infos[3].toLowerCase();
+      this.level = mySpell.getLevel();
+      this.duration = mySpell.getDuration();
+      this.targetType = mySpell.getTargetType();
+      this.spellType = mySpell.getSpellType();
+      this.myCastTime = mySpell.getMyCastMillis();
+
+      this.cachedTargetType = determineTargetType(sd, targetType, aeRange, canMGBorTGB);
+
+      double bestChance = 0;
+      ResistType bestResistType = ResistType.NONE;
+
+      for(ResistType resistType : ResistType.values()) {
+        if(resistType != ResistType.NONE) {
+          double chance = getResistTypeChance(resistType);
+
+          if(chance > bestChance) {
+            bestChance = chance;
+            bestResistType = resistType;
+          }
+        }
+      }
+
+      this.resistType = bestResistType;
     }
     catch(NullPointerException e) {
       throw new RuntimeException("Unable to find spell with ID " + id, e);
     }
 
-    this.isMez = sd.hasAttribute(SpellData.ATTRIB_MESMERIZE);
-    this.isCharm = sd.hasAttribute(SpellData.ATTRIB_CHARM);
-    this.isTwinCast = sd.hasAttribute(SpellData.ATTRIB_TWIN_CAST) && sd.getBase(sd.getAttributeIndex(SpellData.ATTRIB_TWIN_CAST)) >= 100;
-    this.maxTargetLevel = this.isMez   ? sd.getMax(sd.getAttributeIndex(SpellData.ATTRIB_MESMERIZE)) :
-                          this.isCharm ? sd.getMax(sd.getAttributeIndex(SpellData.ATTRIB_CHARM)) :
-                                         255;
+    try {
 
-    isHealOverTime = sd.hasAttribute(SpellData.ATTRIB_HEAL_OVER_TIME) || (sd.hasAttribute(SpellData.ATTRIB_DAMAGE) && sd.getBase(sd.getAttributeIndex(SpellData.ATTRIB_DAMAGE)) > 100 && duration <= 120);
-    isSlow = sd.hasAttribute(SpellData.ATTRIB_SLOW);
-    isSnared = sd.hasAttribute(SpellData.ATTRIB_MOVEMENT) && sd.getBase(sd.getAttributeIndex(SpellData.ATTRIB_MOVEMENT)) < 0;
+  //    this.isMez = sd.hasAttribute(SpellEffect.MESMERIZE) && sd.getBase(sd.getAttributeIndex(SpellEffect.MESMERIZE)) == 2;  // Long duration mez, warning, max target level won't work either if you limit it like this!
+      this.isMez = sd.hasAttribute(Attribute.MESMERIZE) && duration > 10;
+      this.isShortMez = sd.hasAttribute(Attribute.MESMERIZE) && sd.getBase(sd.getAttributeIndex(Attribute.MESMERIZE.getAttribCode())) == 1;
+      this.isLongMez = sd.hasAttribute(Attribute.MESMERIZE) && sd.getBase(sd.getAttributeIndex(Attribute.MESMERIZE.getAttribCode())) == 2;
+      this.isCharm = sd.hasAttribute(Attribute.CHARM);
+      this.isTwinCast = sd.hasAttribute(Attribute.TWIN_CAST) && sd.getEffect(Attribute.TWIN_CAST).getBase1() >= 100 && sd.getEffect(Attribute.LIMIT_SPELL_TYPE).getBase1() == 0;
+      this.isTwinHeal = sd.hasAttribute(Attribute.TWIN_CAST) && sd.getEffect(Attribute.TWIN_CAST).getBase1() >= 100 && sd.getEffect(Attribute.LIMIT_SPELL_TYPE).getBase1() != 0;
+      this.isManaHarvest = sd.hasAttribute(Attribute.MANA) && sd.getEffect(Attribute.MANA).getBase1() > 300 && duration == 0;
+      this.maxTargetLevel = this.isMez   ? sd.getEffect(Attribute.MESMERIZE).getMax() :
+                            this.isCharm ? sd.getEffect(Attribute.CHARM).getMax() :
+                                           255;
+
+      isHealOverTime = sd.hasAttribute(Attribute.HEAL_OVER_TIME) || (sd.hasAttribute(Attribute.DAMAGE) && sd.getEffect(Attribute.DAMAGE).getBase1() > 100 && duration <= 120);
+      isSlow = sd.hasAttribute(Attribute.SLOW);
+      isSnared = sd.hasAttribute(Attribute.MOVEMENT) && sd.getEffect(Attribute.MOVEMENT).getBase1() < 0;
+
+      Set<EffectType> effectTypes = new HashSet<>();
+
+      if(isMez) {
+        effectTypes.add(EffectType.MEZ);
+      }
+      if(isShortMez) {
+        effectTypes.add(EffectType.SHORT_MEZ);
+      }
+      if(isLongMez) {
+        effectTypes.add(EffectType.LONG_MEZ);
+      }
+      if(isCharm) {
+        effectTypes.add(EffectType.CHARM);
+      }
+      if(isSnared) {
+        effectTypes.add(EffectType.SNARED);
+      }
+      if(isSlow) {
+        effectTypes.add(EffectType.SLOW);
+      }
+      if(isHealOverTime) {
+        effectTypes.add(EffectType.HEAL_OVER_TIME);
+      }
+      if(isTwinCast) {
+        effectTypes.add(EffectType.TWIN_CAST);
+      }
+      if(isTwinHeal) {
+        effectTypes.add(EffectType.TWIN_HEAL);
+      }
+      if(isManaHarvest) {
+        effectTypes.add(EffectType.MANA_HARVEST);
+      }
+      if(getDamageOverTime() > 0) {
+        effectTypes.add(EffectType.DAMAGE_OVER_TIME);
+      }
+      if(sd.getEffect(Attribute.MOUNT) != null) {
+        effectTypes.add(EffectType.MOUNTED);
+      }
+      if(sd.getEffect(Attribute.SILENCE) != null) {
+        effectTypes.add(EffectType.SILENCE);
+      }
+
+      EffectDescriptor manaCost = sd.getEffect(Attribute.MANA_COST);
+
+      if(manaCost != null) {
+        if(manaCost.getBase1() == 100 && manaCost.getBase2() == 100) {
+          effectTypes.add(EffectType.MANA_GIFT);
+        }
+        else if(manaCost.getBase1() < 0 || manaCost.getBase2() < 0) {
+          effectTypes.add(EffectType.MANA_PENALTY);
+        }
+      }
+
+      this.effectTypes = Collections.unmodifiableSet(effectTypes);
+    }
+    catch(Exception e) {
+      throw new IllegalArgumentException("Error creating spell: " + sd, e);
+    }
   }
 
-  public EffectType getEffectType() {
-    if(isMez) {
-      return EffectType.MEZ;
-    }
-    if(isCharm) {
-      return EffectType.CHARM;
-    }
-    if(isSnared) {
-      return EffectType.SNARED;
-    }
-    if(isSlow) {
-      return EffectType.SLOW;
-    }
-    if(isHealOverTime) {
-      return EffectType.HEAL_OVER_TIME;
-    }
-    if(isTwinCast) {
-      return EffectType.TWIN_CAST;
-    }
-    if(getDamageOverTime() > 0) {
-      return EffectType.DAMAGE_OVER_TIME;
-    }
-
-    return EffectType.UNCLASSIFIED;
+  public Set<EffectType> getEffectTypes() {
+    return effectTypes;
   }
 
   public boolean isSnared() {
@@ -119,22 +196,62 @@ public class Spell {
   }
 
   public ResistType getResistType() {
-    return sd.getResistType();
+    return resistType;
+  }
+
+  public boolean usesResist(ResistType resistType) {
+    return getResistTypeChance(resistType) > 0;
+  }
+
+  /**
+   * Returns the chance that a certain resist type is used when casting this spell.
+   * 0 means no chance.  1 means 100% chance.  More than 1 means multiple spells.
+   *
+   * @param resistType a resistType
+   * @return a chance, 0 or greater.
+   */
+  public double getResistTypeChance(ResistType resistType) {
+    double chance = 0.0;
+
+    if(isDetrimental()) {
+      if(sd.getResistType().equals(resistType)) {
+        chance += 1.0;
+      }
+
+      for(SpellAndChance spellAndChance : getAutoCastedSpellsAndChances()) {
+        chance += spellAndChance.getSpell().getResistTypeChance(resistType) * spellAndChance.getChance();
+      }
+    }
+
+    return chance;
   }
 
   /**
    * Cast time in milliseconds.  Note that this will return incorrect values for spells attached to items, use effect.getCastTime() instead.
+   * TODO this fluctuates, needs periodic updating
    */
   public int getCastTime() {
+    return myCastTime;
+  }
+
+  public int getStandardCastTime() {
     return castTime;
+  }
+
+  public int getRecastTime() {
+    return sd.getRecastMillis();
+  }
+
+  public int getMaxTargetLevel() {
+    return maxTargetLevel;
   }
 
   public int getDamageOverTime() {
     if(getDuration() > 0 && isDetrimental()) {
-      int index = sd.getAttributeIndex(SpellData.ATTRIB_DAMAGE);
+      EffectDescriptor hp = sd.getEffect(Attribute.DAMAGE);
 
-      if(index >= 0) {
-        return (int)-sd.getBase(index);
+      if(hp != null) {
+        return -hp.getCalculatedBase1(session.getMe().getLevel());  // TODO this uses character level instead of casters level (a DOT on you is not casted by you)
       }
     }
 
@@ -142,60 +259,21 @@ public class Spell {
   }
 
   public int getDamage() {
+    int totalDamage = 0;
+
     if(getDuration() == 0 && isDetrimental()) {
-      int index = sd.getAttributeIndex(SpellData.ATTRIB_DAMAGE);
+      EffectDescriptor hp = sd.getEffect(Attribute.DAMAGE);
 
-      if(index >= 0) {
-        return (int)-sd.getBase(index);
+      if(hp != null) {
+        totalDamage += -hp.getCalculatedBase1(session.getMe().getLevel());  // TODO this uses character level instead of casters level (a DOT on you is not casted by you)
+      }
+
+      for(SpellAndChance spellAndChance : getAutoCastedSpellsAndChances()) {
+        totalDamage += spellAndChance.getSpell().getDamage() * spellAndChance.getChance();
       }
     }
 
-    return 0;
-  }
-
-  /**
-   * Checks if spell would hold on the target.
-   */
-  public boolean isWithinLevelRestrictions(Spawn target) {
-    if(isDetrimental()) {
-      if(target.getLevel() > maxTargetLevel) {
-        return false;
-      }
-
-      return true;
-    }
-    else {
-      if(getDuration() == 0) {
-        return true;  // Spells with no duration always work
-      }
-
-      if(getLevel() < 50) {
-        return true;  // Level 1-49 spells hold on everyone
-      }
-
-      if(target.getLevel() < 61 && getLevel() > 65) {
-        return false; // Level 66+ Spells never hold on targets below level 61
-      }
-
-      // TODO the 2 rules below are basically the same, with a one level difference.  Need to test if a 55 spell can hold on 42 or 61 on 45 or 63 on 46.
-      if(target.getLevel() > 60 && 93 + (target.getLevel() - 61) * 2 >= getLevel()) {
-        // If target is level 61+ then spells below level 94 will hold.  Beyond that:
-        // Assumption: Lvl 93 spell holds on 61, lvl 94 doesn't
-        // Assumption: Lvl 95 spell holds on 62, lvl 96 doesn't
-        // Assumption: Lvl 97 spell holds on 63, lvl 98 doesn't
-        return true;
-      }
-
-      if(getLevel() < 66 && 50 + (target.getLevel() - 40) * 2 >= getLevel()) {
-        // For Level 50 - 65 spells there is a special level based rule based on:
-        // Assumption: Clarity II(54) holds on level 42
-        // Assumption: Aegolism(60) holds on Level 45
-        // Assumption: Virtue(62) holds on Level 46
-        return true;
-      }
-
-      return false;
-    }
+    return totalDamage;
   }
 
 //  public boolean willStack(Spell spell) {
@@ -215,29 +293,17 @@ public class Spell {
 //    }
 
     // Assume that short buffs always stack with regular buffs
-    if(sd1.isShortBuff() || sd2.isShortBuff()) {
-      return true;
+    if(!sd1.isCombatAbility() && !sd2.isCombatAbility()) {
+      if(sd1.isShortBuff() || sd2.isShortBuff()) {
+        return true;
+      }
     }
 
     return sd1.stacksWith(sd2);
   }
 
-  /**
-   * Checks all spells given to this spell.  If any of the spells given is equivalent to this
-   * spell then this method returns <code>true</code>.
-   */
-  public boolean isEquivalent(Iterable<Spell> spells) {
-    Set<String> equivalentSpells = equivalentMap.get(name);
-
-    if(equivalentSpells != null) {
-      for(Spell spell : spells) {
-        if(equivalentSpells.contains(spell.name)) {
-          return true;
-        }
-      }
-    }
-
-    return false;
+  public boolean equalOrOfDifferentRank(Spell spell) {
+    return sd.equalOrOfDifferentRank(spell.sd);
   }
 
   public String getName() {
@@ -248,27 +314,23 @@ public class Spell {
     return id;
   }
 
+  /*
+   * Note about range and AE range:
+   *
+   * The spell file contains many mistakes when it comes to range and AE range.  There
+   * are spells that are PBAE but specify both a range and AE range, however for PBAE
+   * only the AE range is valid.
+   *
+   * Making assumptions based on the values of range and AE range without taking the
+   * target type into account is therefore a bad idea.
+   */
+
   public double getRange() {
     return aeRange > 0 && range == 0.0 ? aeRange : range;
   }
 
-  // TODO not really needed now is it?
   public double getAERange() {
     return aeRange;
-  }
-
-  /**
-   * Returns <code>true</code> if this a targetted spell.
-   *
-   * @return <code>true</code> if this a targetted spell
-   */
-  public boolean isTargetted() {
-    //System.err.println("++isTargetted " + this + "; tt = " + targetType + "; dur = " + duration + "; brdlvl = " + session.getRawSpellData(id).getBrdLevel());
-    return targetType.equals("corpse") || !(targetType.equals("self") || targetType.equals("pb ae") || (targetType.startsWith("group") && (duration == 0 || session.getMe().isBard())));
-  }
-
-  public String getTargetTypeAsString() {
-    return targetType;
   }
 
   public boolean isDetrimental() {
@@ -276,9 +338,14 @@ public class Spell {
   }
 
   public TargetType getTargetType() {
+    return cachedTargetType;
+  }
+
+  public static TargetType determineTargetType(SpellData sd, String targetType, double aeRange, boolean canMGBorTGB) {
 
     /*
      * Note: Scorch Bones = single target, but with AE range of 1.0
+     *       Revile = PBAE, but with range of 150 and ae range of 50 (range is ignored obviously)
      */
 
     if(targetType.equals("pb ae")) {
@@ -292,6 +359,37 @@ public class Spell {
     }
     else if(targetType.equals("targeted ae")) {
       return TargetType.TARGETED_AE;
+    }
+    else if(targetType.equals("self")) {
+      return TargetType.SELF;
+    }
+    else if(targetType.equals("line of sight")) {
+      return TargetType.BOLT;
+    }
+    else if(targetType.equals("group v1") || targetType.equals("group v2")) {
+      // Elixir of the Acquital is group v1; can be mgb'd / tgb'd
+      // Fool the Fallen is group v2; cannot be mgb'd / tgb'd
+      // Word of Reformation is group v1; cannot be mgb'd / tgb'd
+      // Hand of Virtue is group v2; can be mgb'd / tgb'd
+      return canMGBorTGB ? TargetType.TARGETED_GROUP : TargetType.GROUP;
+    }
+    else if(targetType.equals("caster pb pc")) {  // For example: Glyph Spray
+      return TargetType.TARGETED_AE;  // TARGETED_GROUP is wrong as it has a default target, Glyph Spray MUST have a PC targetted
+    }
+    else if(targetType.equals("ae pc v1")) {  // For example: Large Modulating Shard
+      return TargetType.TARGETED_AE;
+    }
+    else if(targetType.equals("beam")) {  // For example: Beam of Slumber
+      return TargetType.BEAM;
+    }
+    else if(targetType.equals("unknown")) {
+      System.out.println("[WARNING] Spell::determineTargetType - Unknown target type for: " + sd);
+      if(sd.getTargetType() == SpellData.TARGET_TYPE_AE_PC_V1) {  // Glyph Spray -> UNKNOWN... AE PC v1 (PC Only) [code=36]
+        return TargetType.TARGETED_AE;  // TARGETED_GROUP is wrong as it has a default target, Glyph Spray MUST have a PC targetted
+      }
+      else if(sd.getTargetType() == SpellData.TARGET_TYPE_BEAM) {
+        return TargetType.BEAM;
+      }
     }
 
     return aeRange > 0.0 ? TargetType.GROUP : TargetType.SINGLE;
@@ -311,21 +409,6 @@ public class Spell {
   @Override
   public String toString() {
     return "Spell: " + name;
-  }
-
-  private static Map<String, Set<String>> equivalentMap = new HashMap<>();
-
-  static {
-    addEquivalent("Balance of Discord", "Turgur's Swarm");
-    addEquivalent("Befuddle", "Befuddle Rk. II", "Befuddle Rk. III", "Befuddling Flash", "Befuddling Flash Rk. II", "Befuddling Flash Rk. III");
-  }
-
-  private static void addEquivalent(String... spellNames) {
-    Set<String> equivalentSpells = new HashSet<>(Arrays.asList(spellNames));
-
-    for(String spellName : equivalentSpells) {
-      equivalentMap.put(spellName, equivalentSpells);
-    }
   }
 
   public SpellData getRawSpellData() {
@@ -352,7 +435,7 @@ public class Spell {
     List<Spell> autoCastedSpells = new ArrayList<>();
 
     for(int i = 0; i < 12; i++) {
-      if(sd.getAttrib(i) == SpellData.ATTRIB_AUTO_CAST) {
+      if(sd.getAttrib(i) == Attribute.AUTO_CAST_ANY.getAttribCode() || sd.getAttrib(i) == Attribute.AUTO_CAST_ONE.getAttribCode()) {
         if(sd.getBase(i) == 100) { // 100 = 100% chance
           // Base2 is the ID of the auto cast spell
           autoCastedSpells.add(session.getSpell((int)sd.getBase2(i)));
@@ -361,6 +444,24 @@ public class Spell {
     }
 
     return autoCastedSpells;
+  }
+
+  public List<SpellAndChance> getAutoCastedSpellsAndChances() {
+    List<SpellAndChance> autoCastedSpells = new ArrayList<>();
+
+    for(int i = 0; i < 12; i++) {
+      if(sd.getAttrib(i) == Attribute.AUTO_CAST_ANY.getAttribCode() || sd.getAttrib(i) == Attribute.AUTO_CAST_ONE.getAttribCode()) {
+        if(sd.getBase2(i) > 0) {
+          autoCastedSpells.add(new SpellAndChance(session.getSpell((int)sd.getBase2(i)), sd.getBase(i) / 100));
+        }
+      }
+    }
+
+    return autoCastedSpells;
+  }
+
+  public EffectDescriptor getEffectDescriptor(Attribute spellEffect) {
+    return getRawSpellData().getEffect(spellEffect);
   }
 
   private static final Pattern BASE_SPELL_NAME = Pattern.compile("(.*?)( +Rk\\. *(II|III))?");

@@ -5,8 +5,10 @@ import static org.junit.Assert.*;
 import java.util.Arrays;
 import java.util.Collection;
 
+import org.junit.Ignore;
 import org.junit.Test;
 
+import autoeq.eq.VariableContext;
 import autoeq.expr.Parser;
 import autoeq.expr.SyntaxException;
 
@@ -30,6 +32,212 @@ public class ParserTestCase {
   }
 
   @Test
+  public void shouldSupportLiteralBooleans() throws SyntaxException {
+    assertTrue((Boolean)Parser.parse(root, "true"));
+    assertFalse((Boolean)Parser.parse(root, "false"));
+    assertTrue((Boolean)Parser.parse(root, "2 == 3 || true"));
+    assertFalse((Boolean)Parser.parse(root, "2 == 2 && false"));
+  }
+
+
+  @Test
+  public void shouldSupportArrayArgument() throws SyntaxException {
+    assertTrue((Boolean)Parser.parse(root, "me.isOfClass(\"BRD\", \"ENC\")"));
+  }
+
+  @Test
+  public void shouldX() {
+    System.out.println(">>> " + Integer.class.isAssignableFrom(Long.class));
+    System.out.println(">>> " + Integer.class.isAssignableFrom(long.class));
+    System.out.println(">>> " + Integer.class.isAssignableFrom(int.class));
+    System.out.println(">>> " + Long.class.isAssignableFrom(Integer.class));
+    System.out.println(">>> " + Long.class.isAssignableFrom(int.class));
+    System.out.println(">>> " + Long.class.isAssignableFrom(long.class));
+    System.out.println(">>> " + int.class.isAssignableFrom(Long.class));
+    System.out.println(">>> " + int.class.isAssignableFrom(long.class));
+    System.out.println(">>> " + int.class.isAssignableFrom(Integer.class));
+    System.out.println(">>> " + long.class.isAssignableFrom(Integer.class));
+    System.out.println(">>> " + long.class.isAssignableFrom(int.class));
+    System.out.println(">>> " + long.class.isAssignableFrom(Long.class));
+  }
+
+  @Test
+  public void shouldFindMethod() throws SyntaxException {
+    Parser.parse(root, "me.context.setExpiringVariable(\"bla\", 1000)");
+  }
+
+  @Test
+  public void shouldSupportConditionalOperator() throws SyntaxException {
+    assertEquals(5, Parser.parse(null, "true ? 5 : 6"));
+    assertEquals(6, Parser.parse(null, "false ? 5 : 6"));
+    assertEquals(7, Parser.parse(null, "true ? 5 + 2 : 6 / 2"));
+    assertEquals(3, Parser.parse(null, "false ? 5 + 2 : 6 / 2"));
+    assertEquals(8, Parser.parse(null, "false ? 5 + 2 : true ? 5 + 3 : 6 / 2"));
+    assertEquals(3, Parser.parse(null, "(2 == 1 + 1) ? 3 : 2"));
+    assertEquals(3, Parser.parse(null, "(2 == 1 + 1) ? 3 : (2 == 1 + 2) ? 4 : 5"));
+    assertEquals(4, Parser.parse(null, "(2 == 1 + 2) ? 3 : (2 == 1 + 1) ? 4 : 5"));
+    assertEquals(5, Parser.parse(null, "(2 == 1 + 3) ? 3 : (2 == 1 + 2) ? 4 : 5"));
+    assertEquals(3, Parser.parse(null, "(2 == 1 + 1) ? false ? 5 + 2 : 6 / 2 : 6 / 3"));
+    assertEquals(5, Parser.parse(null, "true ? 5 : 6"));
+    assertEquals(true, Parser.parse(null, "true ? true : false"));
+    assertEquals(false, Parser.parse(null, "true ? false : true"));
+    assertEquals(true, Parser.parse(null, "true ? 90 <= 85 || 60 <= 75 : false"));
+    assertEquals(true, Parser.parse(null, "true ? (20 <= 85) || 60 <= 75 : false"));
+    assertEquals(true, Parser.parse(null, "true ? (20 <= 85 && (true || false)) || 60 <= 75 : false"));
+    assertEquals(14, Parser.parse(null, "true ? (5+2) * 2 : 6"));
+    assertEquals(true, Parser.parse(null, "true ? (20 <= 85) || 60 <= 75 : false"));
+
+    try {
+      Parser.parse(null, "true ?");
+      fail();
+    }
+    catch(SyntaxException e) {
+      assertTrue(e.getMessage().contains("Expression expected"));
+      assertEquals(5, e.getToken().getPosition());
+    }
+
+    try {
+      Parser.parse(null, "true ? 2");
+      fail();
+    }
+    catch(SyntaxException e) {
+      assertTrue(e.getMessage().contains("':' expected"));
+      assertEquals(5, e.getToken().getPosition());
+    }
+
+    try {
+      Parser.parse(null, "true ? :");
+      fail();
+    }
+    catch(SyntaxException e) {
+      assertTrue(e.getMessage().contains("Expression expected"));
+      assertEquals(7, e.getToken().getPosition());
+    }
+
+    try {
+      Parser.parse(null, "true ? : 2");
+      fail();
+    }
+    catch(SyntaxException e) {
+      assertTrue("" + e, e.getMessage().contains("Expression expected"));
+      assertEquals(7, e.getToken().getPosition());
+    }
+
+    try {
+      Parser.parse(null, "true ? 2 :");
+      fail();
+    }
+    catch(SyntaxException e) {
+      assertTrue(e.getMessage().contains("Expression expected"));
+      assertEquals(5, e.getToken().getPosition());
+    }
+  }
+
+  @Test
+  public void shouldNotAllowColonOutsideConditionalOperator() {
+    try {
+      Parser.parse(null, ":");
+      fail();
+    }
+    catch(SyntaxException e) {
+      assertTrue(e.getMessage().contains("Expression expected"));
+      assertEquals(0, e.getToken().getPosition());
+    }
+
+    try {
+      Parser.parse(null, "true : false");
+      fail();
+    }
+    catch(SyntaxException e) {
+      assertTrue(e.getMessage().contains("Operator expected"));
+      assertEquals(5, e.getToken().getPosition());
+    }
+
+    try {
+      Parser.parse(null, "2 / : 3");
+      fail();
+    }
+    catch(SyntaxException e) {
+      assertTrue(e.getMessage().contains("Expression expected"));
+      assertEquals(4, e.getToken().getPosition());
+    }
+
+    try {
+      assertEquals(true, Parser.parse(null, "2 + 3 : 2"));
+      fail();
+    }
+    catch(SyntaxException e) {
+      assertTrue(e.getMessage().contains("Operator expected"));
+      assertEquals(6, e.getToken().getPosition());
+    }
+  }
+
+  @Test(expected = SyntaxException.class)
+  public void shouldNotAllowOperatorAfterCommaOperator() throws SyntaxException {
+    try {
+      Parser.parse(root, "1, / 2");
+    }
+    catch(SyntaxException e) {
+      assertTrue(e.getMessage().contains("Variable or literal expected"));
+      throw e;
+    }
+  }
+
+  @Test
+  public void shouldDoShortcutEvaluation() throws SyntaxException {
+    assertFalse((Boolean)Parser.parse(root, "target.mana > 100"));
+    assertFalse((Boolean)Parser.parse(root, "target.mana > 100 && target.mana < 200"));
+    assertFalse((Boolean)Parser.parse(root, "target != null && (target.mana > 100 && target.mana < 200)"));
+    assertFalse((Boolean)Parser.parse(root, "mainAssistTarget != null && mainAssistTarget.mana > 100"));
+    assertFalse((Boolean)Parser.parse(root, "mainAssistTarget != null && mainAssistTarget.mana > 100 && mainAssistTarget.mana < 200"));
+    assertFalse((Boolean)Parser.parse(root, "mainAssistTarget != null && (mainAssistTarget.mana > 100 && mainAssistTarget.mana < 200)"));
+    assertFalse((Boolean)Parser.parse(root, "mainAssistTarget != null && mainAssistTarget.mana() > 100 ? 2 + \"a\" : false"));
+  }
+
+  @Test
+  public void shouldSupportElvisOperator() throws SyntaxException {
+    assertEquals(2, Parser.parse(null, "null ?: 2"));
+    assertEquals(root.target, Parser.parse(root, "target ?: 2"));
+    assertEquals(2, Parser.parse(root, "mainAssistTarget ?: 2"));
+    assertEquals(2, Parser.parse(root, "mainAssistTarget.mana ?: 2"));
+    assertEquals(2, Parser.parse(root, "mainAssistTarget.pet.mana ?: 2"));
+    assertEquals(2, Parser.parse(root, "mainAssistTarget.pet.multiply(2 + 2, 4) ?: 2"));
+    assertEquals(true, Parser.parse(root, "(mainAssistTarget.pet.multiply(2 + 2, 4) ?: 2) < 5"));
+    assertEquals(false, Parser.parse(root, "(target.mana ?: 2) < 5"));
+
+    try {
+      Parser.parse(null, "null ?:");
+      fail();
+    }
+    catch(SyntaxException e) {
+      assertTrue(e.getMessage().contains("Expression expected"));
+      assertEquals(5, e.getToken().getPosition());
+    }
+  }
+
+  @Test
+  @Ignore("not needed to support this, as currently member selection already safely returns null")
+  public void shouldSupportNullSafeMemberSelectionOperator() throws SyntaxException {
+    assertEquals(100, Parser.parse(root, "target?.mana"));
+    assertEquals(null, Parser.parse(root, "mainAssistTarget?.mana"));
+
+    try {
+      Parser.parse(null, "null?.");
+      fail();
+    }
+    catch(SyntaxException e) {
+      assertTrue(e.getMessage().contains("Expression expected"));
+      assertEquals(5, e.getToken().getPosition());
+    }
+  }
+
+  @Test
+  public void shouldDoSameLevelOperatorsInOrder() throws SyntaxException {
+    assertEquals(20, Parser.parse(null, "4 / 2 * 10"));
+    assertEquals(2, Parser.parse(null, "4 * 1000 / 2000"));
+  }
+
+  @Test
   public void testParse() throws SyntaxException {
     assertTrue((Boolean)Parser.parse(root, "0 == 1 || 1 == 1"));
     assertTrue((Boolean)Parser.parse(root, "target.mana < 95 || target.mana > 99"));
@@ -44,13 +252,16 @@ public class ParserTestCase {
     assertFalse((Boolean)Parser.parse(root, "!(0 == 1 || 1 == 1)"));
     assertFalse((Boolean)Parser.parse(root, "0 == 1 && !(1 == 1)"));
 
+    assertTrue((Boolean)Parser.parse(root, "target.inCombat"));
+    assertFalse((Boolean)Parser.parse(root, "!target.inCombat"));
+    assertFalse((Boolean)Parser.parse(root, "target.mana < 20 && !target.inCombat"));
     assertFalse((Boolean)Parser.parse(root, "target.mana < 20 && !target.inCombat && target.notInCombat"));
     assertFalse((Boolean)Parser.parse(root, "target.mana < 20 && !target.inCombat && !(target.names contains \"Testchar Deluxe\")"));
     assertFalse((Boolean)Parser.parse(root, "target.mana > 20 && !target.inCombat && !(target.names contains \"Testchar Deluxe\")"));
     assertFalse((Boolean)Parser.parse(root, "target.mana > 20 && !target.notInCombat && !(target.names contains \"Testchar Deluxe\")"));
     assertTrue((Boolean)Parser.parse(root, "target.mana > 20 && !target.notInCombat && !(target.names contains \"Testchar\")"));
 
-    assertEquals(45.0, (Double)Parser.parse(root, "2 + 6 / 2 + 8 * (3 + 2)"), 0.00001);
+    assertEquals(45, Parser.parse(root, "2 + 6 / 2 + 8 * (3 + 2)"));
 
     assertTrue((Boolean)Parser.parse(root, "me.names contains \"Testchar Deluxe\""));
     assertFalse((Boolean)Parser.parse(root, "me.names contains \"Testchar\""));
@@ -61,7 +272,7 @@ public class ParserTestCase {
       fail();
     }
     catch(SyntaxException e) {
-      assertTrue(e.getMessage().contains("Token expected"));
+      assertTrue(e.getMessage().contains("Expression expected"));
     }
 
     try {
@@ -89,14 +300,6 @@ public class ParserTestCase {
     }
 
     try {
-      Parser.parse(root, "1, / 2");
-      fail();
-    }
-    catch(SyntaxException e) {
-      assertTrue(e.getMessage().contains("Variable or literal expected"));
-    }
-
-    try {
       Parser.parse(root, "10 11");
       fail();
     }
@@ -109,24 +312,18 @@ public class ParserTestCase {
       fail();
     }
     catch(SyntaxException e) {
-      assertTrue(e.getMessage().contains("Operator expected"));
+      assertTrue(e.getMessage().contains("Binary operator expected"));
     }
 
     assertEquals(5, Parser.parse(root, "abs(-5)"));
-    assertEquals(15.0, Parser.parse(root, "multiply(2, 6) + 3"));
+    assertEquals(15, Parser.parse(root, "multiply(2, 6) + 3"));
     assertEquals(8, Parser.parse(root, "multiply(2, divide(12, 3))"));
-    assertEquals(36.0, Parser.parse(root, "multiply(2, 6) * 3"));
-    assertEquals(36.0, Parser.parse(root, "target.multiply(2, 6) * 3"));
-    assertEquals(42.0, Parser.parse(root, "(2 + multiply(2, 6)) * 3"));
+    assertEquals(36, Parser.parse(root, "multiply(2, 6) * 3"));
+    assertEquals(36, Parser.parse(root, "target.multiply(2, 6) * 3"));
+    assertEquals(42, Parser.parse(root, "(2 + multiply(2, 6)) * 3"));
 
     assertTrue((Boolean)Parser.parse(root, "target.mana == 2 * 50"));
     assertTrue((Boolean)Parser.parse(root, "target.mana == multiply(2, 30) + 40"));
-
-    // Shortcut Evaluation tests:
-    assertFalse((Boolean)Parser.parse(root, "target != null && (target.mana > 100 && target.mana < 200)"));
-    assertFalse((Boolean)Parser.parse(root, "mainAssistTarget != null && mainAssistTarget.mana > 100"));
-    assertFalse((Boolean)Parser.parse(root, "mainAssistTarget != null && mainAssistTarget.mana > 100 && mainAssistTarget.mana < 200"));
-    assertFalse((Boolean)Parser.parse(root, "mainAssistTarget != null && (mainAssistTarget.mana > 100 && mainAssistTarget.mana < 200)"));
 
     // Parameter test
     assertFalse((Boolean)Parser.parse(root, "me.isSameSpawn(target)"));
@@ -194,6 +391,12 @@ public class ParserTestCase {
   }
 
   public static class Spawn {
+    private final VariableContext variableContext = new VariableContext();
+
+    public VariableContext getContext() {
+      return variableContext;
+    }
+
     public boolean isMe() {
       return true;
     }
@@ -235,6 +438,10 @@ public class ParserTestCase {
 
     public String name() {
       return "Firiona";
+    }
+
+    public boolean isOfClass(String... classes) {
+      return Arrays.asList(classes).contains("ENC");
     }
 
     public Collection<String> names() {

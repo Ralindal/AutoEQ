@@ -7,6 +7,7 @@ import java.util.regex.Pattern;
 import autoeq.ThreadScoped;
 import autoeq.commandline.CommandLineParser;
 import autoeq.eq.Command;
+import autoeq.eq.EffectType;
 import autoeq.eq.EverquestSession;
 import autoeq.eq.Location;
 import autoeq.eq.Me;
@@ -20,7 +21,6 @@ import autoeq.modules.pull.MoveUtils;
 import autoeq.modules.pull.MoveModule.Mover;
 
 import com.google.inject.Inject;
-
 
 @ThreadScoped
 public class CampModule implements Module {
@@ -46,28 +46,40 @@ public class CampModule implements Module {
 
     Section section = session.getIni().getSection("Camp");
 
-    face = section.get("Face").toLowerCase();
+    face = section == null ? "Nearest" : section.getDefault("Face", "Nearest").toLowerCase();
 
     session.addUserCommand("camp", Pattern.compile(".+"), CommandLineParser.getHelpString(CampConf.class), new UserCommand() {
       @Override
       public void onCommand(Matcher matcher) {
-        CampConf newConf = new CampConf(conf);
+        if(!matcher.group(0).trim().equals("status")) {
+          CampConf newConf = new CampConf(conf);
 
-        CommandLineParser.parse(newConf, matcher.group(0));
+          newConf.setMode(null);
+          newConf.setAt(null);
 
-        conf = newConf;
+          CommandLineParser.parse(newConf, matcher.group(0));
 
-        if(conf.getMode() == Mode.SET) {
-          campX = session.getMe().getX();
-          campY = session.getMe().getY();
-          campZoneId = session.getZoneId();
+          if(newConf.getMode() == Mode.SET) {
+            campX = session.getMe().getX();
+            campY = session.getMe().getY();
+            campZoneId = session.getZoneId();
+          }
+          else if(newConf.getMode() == Mode.CLEAR) {
+            newConf.setAt(null);
+          }
+          else if(newConf.getMode() == null) {
+            newConf.setMode(conf.getMode());
+            newConf.setAt(conf.getAt());
+          }
+
+          conf = newConf;
+
+          if(conf.isFs()) {
+            fellowshipCampExpiryTime = Long.MIN_VALUE;
+          }
         }
 
-        if(conf.isFs()) {
-          fellowshipCampExpiryTime = Long.MIN_VALUE;
-        }
-
-        session.echo("==> Camp is " + (conf.getMode() == Mode.SET ? "set" : "not set") + (conf.getAt() != null ? " at " + conf.getAt() : "") + ".  Camp size is " + conf.getSize() + ".  Max distance is " + conf.getMaxDistance() + "." + (conf.isFs() ? "  Maintaining FS camp." : ""));
+        session.echo("==> Camp is " + (conf.getMode() == Mode.SET ? "set at " + (conf.getAt() != null ? conf.getAt() : String.format("%.0f,%.0f", campY, campX)) : "not set") + ".  Camp size is " + conf.getSize() + ".  Max distance is " + conf.getMaxDistance() + "." + (conf.isFs() ? "  Maintaining FS camp." : ""));
       }
     });
   }
@@ -80,6 +92,14 @@ public class CampModule implements Module {
     return conf.getAt() == null ? campY : session.getMe().getY();
   }
 
+  public float getCampZ() {
+    return session.getMe().getZ();
+  }
+
+  public int getCampSize() {
+    return conf.getSize();
+  }
+
   public boolean isCampSet() {
     return conf.getMode() == Mode.SET;
   }
@@ -89,8 +109,8 @@ public class CampModule implements Module {
   }
 
   @Override
-  public boolean isLowLatency() {
-    return false;
+  public int getBurstCount() {
+    return 1;
   }
 
   @Override
@@ -104,9 +124,9 @@ public class CampModule implements Module {
     if(session.tryLockMovement()) {
       try {
         if(conf.getMode() == Mode.SET && conf.getAt() == null) {
-          if(!me.isMoving() && !me.isCasting()) {
+          if(!me.isMoving() && (!me.isCasting() || me.isBard())) {
             if(campZoneId != session.getZoneId()) {
-              session.log("CAMP: We zoned.  Turning camp off.");
+              session.echo("CAMP: We zoned.  Turning camp off.");
               conf.setMode(Mode.CLEAR);
             }
             else {
@@ -114,17 +134,17 @@ public class CampModule implements Module {
 
               if((!me.inCombat() && distanceFromCamp > conf.getSize()) || distanceFromCamp > conf.getMaxDistance()) {
                 if(distanceFromCamp > conf.getMaxDistance() * 5) {
-                  session.log("CAMP: We're very far away from camp.  Resetting camp location.");
+                  session.echo("CAMP: We're very far away from camp.  Resetting camp location.");
                   conf.setMode(Mode.CLEAR);
                 }
                 else {
-                  session.log("CAMP: We're outside camp radius, moving back");
+                  session.echo("CAMP: We're outside camp radius, moving back");
 
-                  if(distanceFromCamp < 50) {
-                    MoveUtils.moveBackwardsTo(session, campX, campY);
+                  if(distanceFromCamp < 50 && me.getActiveEffect(EffectType.SNARED) == null) {
+                    MoveUtils.moveBackwardsTo(session, campX, campY, null);
                   }
                   else {
-                    MoveUtils.moveTo(session, campX, campY);
+                    MoveUtils.moveTo(session, campX, campY, null);
                   }
                 }
               }
@@ -160,7 +180,7 @@ public class CampModule implements Module {
             double nearestDistance = Double.MAX_VALUE;
 
             for(Spawn spawn : session.getSpawns()) {
-              if(!spawn.isIgnored() && spawn.isEnemy()) {
+              if(spawn.isEnemy()) {
                 if(spawn.getDistance() < nearestDistance) {
                   nearestDistance = spawn.getDistance();
                   nearestEnemy = spawn;
@@ -186,7 +206,7 @@ public class CampModule implements Module {
           }
         }
         else if(conf.getMode() == Mode.SET && conf.getAt() != null) {
-          if(!me.isCasting()) {
+          if(!me.isCasting() || me.isBard()) {
             // Algorithm should be something like:
             // 1) Wait until PC you want to stay near is outside of 50 range.
             // 2) When outside of range, look at last know positions of Spawn, find the last one that is just outside 50 range.
@@ -194,25 +214,35 @@ public class CampModule implements Module {
             Spawn leader = session.getSpawn(conf.getAt());
 
             if(leader != null) {
-              if(leader.getDistance() > 50) {
-                if(mover == null) {
-                  mover = session.obtainResource(Mover.class);
+//              if(leader.getDistance() > 500) {
+//                session.echo("CAMP: " + conf.getAt() + " too far away, not following!");
+//                conf.setMode(Mode.CLEAR);
+//
+//                if(mover != null) {
+//                  mover.clear();
+//                  session.releaseResource(mover);
+//                  mover = null;
+//                }
+//              }
+              if(leader.getDistance() > 50 && mover == null) {
+                mover = session.obtainResource(Mover.class);
 
-                  if(mover != null) {
-                    session.doCommand("/echo CAMP: " + conf.getAt() + " moving out of range, following.");
-                    List<Location> lastLocations = leader.getLastLocations();
-                    int start = lastLocations.size() - 1;
+                if(mover != null) {
+                  session.echo("CAMP: " + conf.getAt() + " moving out of range, following.");
+                  List<Location> lastLocations = leader.getLastLocations();
+                  int start = lastLocations.size() - 1;
 
-                    for(int i = 0; i < lastLocations.size(); i++) {
-                      if(me.getDistance(lastLocations.get(i).x, lastLocations.get(i).y) < 30) {
-                        start = i;
-                        break;
-                      }
+                  for(int i = 0; i < lastLocations.size(); i++) {
+                    if(me.getDistance(lastLocations.get(i).x, lastLocations.get(i).y) < 30) {
+                      start = i;
+                      break;
                     }
+                  }
 
-                    for(int i = start; i >= 0; i--) {
-                      mover.addWayPoint(lastLocations.get(i).x, lastLocations.get(i).y);
-                    }
+                  for(int i = start; i >= 0; i--) {
+                    Location location = lastLocations.get(i);
+
+                    mover.addWayPoint(location.x, location.y, location.z);
                   }
                 }
               }
@@ -222,21 +252,30 @@ public class CampModule implements Module {
                   mover.clear();
                   session.releaseResource(mover);
                   mover = null;
-                  session.doCommand("/echo CAMP: Reached " + conf.getAt() + ", holding.");
+                  session.echo("CAMP: Reached " + conf.getAt() + ", holding.");
+                }
+                else if(mover.getLastWayPoint() == null && leader.getDistance() > 100) {
+                  mover.clear();
+                  session.releaseResource(mover);
+                  mover = null;
+                  session.echo("CAMP: Leader warped, couldn't follow, clearing camp!");
+                  conf.setMode(Mode.CLEAR);
                 }
                 else {
-                  mover.addWayPoint(leader.getX(), leader.getY());
+                  mover.addWayPoint(leader.getX(), leader.getY(), leader.getZ());
                 }
               }
             }
             else {
               session.log("CAMP: Can't follow '" + conf.getAt() + "'");
+              conf.setMode(Mode.CLEAR);
 
 //              for(Spawn s : session.getSpawns()) {
 //                System.err.println(s);
 //              }
 
               if(mover != null) {
+                mover.clear();
                 session.releaseResource(mover);
                 mover = null;
               }

@@ -45,12 +45,13 @@ public class ProfileSet {
     activeKey = null;
   }
 
-  public void toggle(String profileName) {
+  public boolean toggle(String profileName) {
     if(!contains(profileName)) {
       throw new RuntimeException("No such profile: " + profileName);
     }
 
     activeKey = profileName.toLowerCase().equals(activeKey) ? null : profileName.toLowerCase();
+    return activeKey != null;
   }
 
   @Override
@@ -59,12 +60,16 @@ public class ProfileSet {
 
     for(String name : profileNames.values()) {
       if(s.length() > 0) {
-        s += ", ";
+        s += " ";
       }
-      s += name;
       if(activeKey != null && activeKey.equals(name.toLowerCase())) {
-        s += "*";
+        s += "\\aw";
       }
+      else {
+        s += "\\a-w";
+      }
+
+      s += name;
     }
 
     return s;

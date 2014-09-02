@@ -16,28 +16,28 @@ import com.google.inject.Inject;
 
 @ThreadScoped
 public class InviteModule implements Module, ChatListener {
-  private static final Pattern INVITE_PATTERN = Pattern.compile("([A-Z][a-z]{3,}) tells you, '(.*)'");
-  
+  private static final Pattern INVITE_PATTERN = Pattern.compile("([A-Z][a-z]{3,}) (invites you to join a group\\.|tells you, '(.*)')");
+
   private final EverquestSession session;
   private List<String> allowedCharacters;
 
   @Inject
   public InviteModule(EverquestSession session) {
     this.session = session;
-    
+
     session.addChatListener(this);
-    
+
     Section section = session.getIni().getSection("Invite");
-    
+
     if(section != null) {
       allowedCharacters = section.getAll("Name");
     }
   }
-  
+
   public int getPriority() {
     return 9;
   }
-  
+
   @Override
   public List<Command> pulse() {
     return null;
@@ -52,17 +52,24 @@ public class InviteModule implements Module, ChatListener {
   public void match(Matcher matcher) {
     String person = matcher.group(1);
     String text = matcher.group(2);
-        
-    if(text.toLowerCase().contains("invite")) {
+
+    if(text.startsWith("tells you") && text.toLowerCase().contains("invite")) {
       if(allowedCharacters != null && allowedCharacters.contains(person)) {
         session.echo("INVITE: Inviting " + person);
         session.doCommand("/invite " + person);
       }
     }
+
+    if(text.startsWith("invites you to join a group")) {
+      if(allowedCharacters != null && allowedCharacters.contains(person)) {
+        session.echo("INVITE: Accepting invite from " + person);
+        session.doCommand("/invite");
+      }
+    }
   }
-  
+
   @Override
-  public boolean isLowLatency() {
-    return false;
+  public int getBurstCount() {
+    return 8;
   }
 }

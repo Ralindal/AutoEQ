@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -15,7 +16,9 @@ import java.util.regex.Pattern;
 import autoeq.ExpressionEvaluator;
 import autoeq.TargetPattern;
 import autoeq.ThreadScoped;
+import autoeq.commandline.CommandLineParser;
 import autoeq.effects.Effect;
+import autoeq.effects.Effect.Type;
 import autoeq.eq.Command;
 import autoeq.eq.Condition;
 import autoeq.eq.EverquestSession;
@@ -27,6 +30,10 @@ import autoeq.eq.SpawnType;
 import autoeq.eq.UserCommand;
 import autoeq.ini.Ini;
 import autoeq.ini.Section;
+import autoeq.modules.camp.CampModule;
+import autoeq.modules.pull.PullConf.Mode;
+import autoeq.modules.pull.PullConf.Order;
+import autoeq.modules.pull.PullConf.State;
 
 import com.google.inject.Inject;
 
@@ -48,224 +55,226 @@ public class PullModule implements Module {
     }
   };
 
-  private long ignoreAgroMillis = 0;
   private Effect pullMethod;
-  private String order = "path";
-  private int zrange = 50;
-  private boolean pullNameds = true;
+  private PullConf conf = new PullConf();
 
-  private String pullPath = "";
-  private boolean active;
+  private final CampModule campModule;
 
   @Inject
-  public PullModule(final EverquestSession session) {
+  public PullModule(final EverquestSession session, CampModule campModule) {
     this.session = session;
+    this.campModule = campModule;
 
     Section section = session.getIni().getSection("Pull");
 
     if(section != null) {
-      active = section.getDefault("Active", "true").toLowerCase().equals("true");
       validTargets = section.getDefault("ValidTargets", "war pal shd mnk rog ber rng bst brd clr shm dru enc mag nec wiz");
-      conditions = section.getAll("Condition");
+      conditions = section.getAll("Condition");  // Conditions that must be satisfied before starting a pull
       prePullBandolier = section.get("PrePullBandolier");
       postPullBandolier = section.get("PostPullBandolier");
     }
     else {
-      active = false;
       validTargets = "";
       conditions = new ArrayList<>();
       prePullBandolier = null;
       postPullBandolier = null;
     }
 
-    session.addUserCommand("pulloption", Pattern.compile("(status|effect (.*)|ignoreagro ([0-9]+)|order (path|density)|zrange ([0-9]+)|nameds (pull|leave))"), "(status|effect <method>|ignoreagro <seconds>|order <path|density>|zrange <range>|nameds <pull|leave>)", new UserCommand() {
+    session.addUserCommand("pull", Pattern.compile(".+"), CommandLineParser.getHelpString(PullConf.class), new UserCommand() {
       @Override
       public void onCommand(Matcher matcher) {
-        String option = matcher.group(1).trim();
+        PullConf newConf = new PullConf(conf);
 
-        if(option.startsWith("effect ")) {
-          pullMethod = session.getEffect(matcher.group(2).trim(), 10);
-        }
-        if(option.startsWith("ignoreagro ")) {
-          ignoreAgroMillis = Integer.parseInt(matcher.group(3).trim()) * 1000;
-        }
-        if(option.startsWith("order ")) {
-          order = matcher.group(4).trim().toLowerCase();
-        }
-        if(option.startsWith("zrange ")) {
-          zrange = Integer.parseInt(matcher.group(5).trim());
-        }
-        if(option.startsWith("nameds ")) {
-          pullNameds = matcher.group(6).trim().equals("pull");
+        CommandLineParser.parse(newConf, matcher.group(0));
+
+        conf = newConf;
+
+        if(conf.getPath() != null && conf.getPath().trim().length() > 0) {
+          loadPullPath(conf.getPath());
         }
 
-        session.echo("==> Pull options: method: " + (pullMethod == null ? "wait for agro" : pullMethod.toString()) + ", ignoreagro: " + ignoreAgroMillis / 1000 + "s, order: " + order + ", zrange: " + zrange + ", nameds: " + (pullNameds ? "pull" : "leave"));
+        pullMethod = conf.getEffect() != null && conf.getEffect().trim().length() > 0 ? session.getEffect(conf.getEffect(), 10) : null;
+
+        session.echo(String.format("==> Pull %s [%s]: method: %s, ignoreagro: %ds, minimum: %d, order: %s, zrange: %d, nameds: %s%s",
+          conf.getState().toString(),
+          conf.getMode().toString() + (conf.getMode() == PullConf.Mode.PATH ? ": " + conf.getPath() : ""),
+          (conf.getEffect() == null ? "wait for agro" : conf.getEffect()),
+          conf.getIgnoreAgro(),
+          conf.getMinimum(),
+          conf.getOrder(),
+          conf.getZRange(),
+          conf.isPullNameds() ? "pull" : "leave",
+          conf.getIgnoredHostiles() == null || conf.getIgnoredHostiles().isEmpty() ? "" : " ignoredHostiles: " + conf.getIgnoredHostiles()
+        ));
       }
     });
+  }
 
-    session.addUserCommand("pull", Pattern.compile("(.*)"), "[path]", new UserCommand() {
-      @Override
-      public void onCommand(Matcher matcher) {
-        String path = matcher.group(1).trim();
+  private void loadPullPath(String path) {
+    try {
+      Ini ini = new Ini(new File(session.getGlobalIni().getValue("Global", "Path"), "pullpaths.ini"));
 
-        if(path.length() > 0) {
-          try {
-            Ini ini = new Ini(new File(session.getGlobalIni().getValue("Global", "Path"), "pullpaths.ini"));
+      Section section = ini.getSection(path);
 
-            Section section = ini.getSection(path);
+      if(section != null) {
+        paths.clear();
 
-            if(section != null) {
-              pullPath = path;
-              paths.clear();
+        for(String key : section) {
+          List<Node> nodes = new ArrayList<>();
+          paths.add(nodes);
 
-              for(String key : section) {
-                List<Node> nodes = new ArrayList<>();
-                paths.add(nodes);
+          List<String> pathParts = new ArrayList<>();
 
-                List<String> pathParts = new ArrayList<>();
+          pathParts.addAll(Arrays.asList(section.get(key).trim().split(" ")));
 
-                pathParts.addAll(Arrays.asList(section.get(key).trim().split(" ")));
+          String parentPath;
 
-                String parentPath;
+          while((parentPath = section.get(pathParts.get(0))) != null) {
+            pathParts.remove(0);
+            pathParts.addAll(0, Arrays.asList(parentPath.trim().split(" ")));
+          }
 
-                while((parentPath = section.get(pathParts.get(0))) != null) {
-                  pathParts.remove(0);
-                  pathParts.addAll(0, Arrays.asList(parentPath.trim().split(" ")));
-                }
+          for(String s : pathParts) {
+            Matcher m = NODE.matcher(s);
 
-                for(String s : pathParts) {
-                  Matcher m = NODE.matcher(s);
+            if(m.matches()) {
+              Float z = null;
+              int size = 50;
 
-                  if(m.matches()) {
-                    Float z = null;
-                    int size = 50;
-
-                    if(m.group(3) != null) {
-                      z = (float)Integer.parseInt(m.group(3));
-                    }
-                    if(m.group(4) != null) {
-                      size = Integer.parseInt(m.group(4));
-                    }
-
-                    nodes.add(new Node(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), z, size));
-                  }
-                }
+              if(m.group(3) != null) {
+                z = (float)Integer.parseInt(m.group(3));
               }
-            }
-            else {
-              session.doCommand("/echo ==> Pull path '" + path + "' not found.");
+              if(m.group(4) != null) {
+                size = Integer.parseInt(m.group(4));
+              }
+
+              nodes.add(new Node(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), z, size));
             }
           }
-          catch(IOException e) {
-            session.doCommand("/echo ==> Unable to load pull path.");
-          }
-
         }
-        else if(pullPath.length() > 0) {
-          active = !active;
-        }
-
-        session.echo("==> Pulling is " + (active ? "on" : "off") + ".  Path: " + pullPath);
       }
-    });
+      else {
+        session.echo("==> Pull path '" + path + "' not found.");
+      }
+    }
+    catch(IOException e) {
+      session.echo("==> Unable to load pull path: " + e.getMessage());
+    }
   }
 
   @Override
   public List<Command> pulse() {
-    Me me = session.getMe();
+    final Me me = session.getMe();
 
-    if(active && paths.size() > 0 && me.isAlive()) {
-      checkPaths();
+    if(conf.getState() == State.ON && paths.size() > 0 && me.isAlive()) {
+      checkPaths();  // suspends pulling of paths
     }
 
-    if(active && paths.size() > 0 && me.isAlive() && !me.isMoving() && !me.isCasting() && !me.inCombat() && session.tryLockMovement()) {
-      try {
-        // Possibly ready to pull
-
-        // 1) Check pull path areas to see if there's any valid spawns
-        session.delay(1000);
-
-        Pair<List<Node>, List<Spawn>> result = selectPath();
-
-        if(result != null) {
-          if(prePullBandolier != null) {
-            session.doCommand("/bandolier activate " + prePullBandolier);
+    if(conf.getState() == State.ON && ((paths.size() > 0 && conf.getMode() == Mode.PATH) || (conf.getMode() == Mode.CAMP)) && me.isAlive() && !me.isMoving() && !me.isCasting() && me.getExtendedTargetCount() == 0) {
+      if(ExpressionEvaluator.evaluate(conditions, new ExpressionRoot(session, null, null, null, null), this)) {
+        Command command = new Command() {
+          @Override
+          public double getPriority() {
+            return 900;
           }
 
-          try {
-            List<Node> path = result.getA();
-            MoveUtils2.moveTowards(session, path.get(0).x, path.get(0).y);
-
-            Path pullPath = new Path(session);
-
-            pullPath.record();
-
-            try {
+          @Override
+          public boolean execute(final EverquestSession session) {
+            if(session.tryLockMovement()) {
               try {
-                Node endNode = pullAlongPath(path, result.getB());
+                // Possibly ready to pull
 
-                pullPath.stopRecording();
+                // 1) Check pull path areas to see if there's any valid spawns
 
-                if(!me.inCombat()) {
-                  if(ignoreAgroMillis == 0) {
-                    List<Spawn> spawnsAtNode = getSpawns(endNode);
+                if(conf.getMode() == Mode.PATH) {
+                  session.delay(1000);
 
-                    if(spawnsAtNode.size() > 0) {
-                      agroSpawn(spawnsAtNode.get(0), endNode);
+                  List<Node> selectedPath = selectPath();
+
+                  if(selectedPath != null) {
+                    if(prePullBandolier != null) {
+                      session.doCommand("/bandolier activate " + prePullBandolier);
+                    }
+
+                    try {
+                      MoveUtils2.moveTowards(session, selectedPath.get(0).x, selectedPath.get(0).y);
+
+                      Path pullPath = new Path(session);
+
+                      pullPath.record();
+
+                      try {
+                        try {
+                          Node endNode = pullAlongPath(selectedPath);
+
+                          pullPath.stopRecording();
+
+                          if(!me.inCombat()) {
+                            if(conf.getIgnoreAgro() == 0 && conf.getMinimum() == 0) {
+                              List<Spawn> spawnsAtNode = getSpawns(endNode);
+
+                              if(spawnsAtNode.size() > 0) {
+                                agroSpawn(spawnsAtNode.get(0), endNode);
+                              }
+                            }
+                          }
+                        }
+                        catch(MoveException e) {
+                          session.log("Problem during pull, attempting to return home: " + e);
+                        }
+                        // returnHome();
+
+                        session.log("PULL: Returning home");
+
+                        pullPath.playbackReverse();
+                        if(selectedPath.size() > 1) {
+                          session.doCommand(String.format("/face nolook loc %.2f,%.2f", selectedPath.get(1).y, selectedPath.get(1).x));
+                          session.delay(500);  // Time to finish face otherwise a spell cast might stop the turning
+                        }
+
+                        // session.echo("PULL: Done");
+                      }
+                      finally {
+                        MoveUtils2.stop(session);
+                        pullPath.stopRecording();
+                      }
+                    }
+                    finally {
+                      if(postPullBandolier != null) {
+                        session.doCommand("/bandolier activate " + postPullBandolier);
+                      }
                     }
                   }
                 }
-              }
-              catch(MoveException e) {
-                session.log("Problem during pull, attempting to return home: " + e);
-              }
-              // returnHome();
+                else {
+                  final Spawn spawn = getNearestMatchingSpawn(campModule.getCampX(), campModule.getCampY(), null, campModule.getCampSize());
 
-              session.log("PULL: Returning home");
-
-              pullPath.playbackReverse();
-              if(path.size() > 1) {
-                session.doCommand(String.format("/face nolook loc %.2f,%.2f", path.get(1).y, path.get(1).x));
+                  if(spawn != null && spawn.getDistance() > 25) {
+                    MoveUtils2.moveTo(session, spawn, new Condition() {
+                      @Override
+                      public boolean isValid() {
+                        return !spawn.isAlive() || session.getMe().inCombat() || spawn.getDistance() < 20;
+                      }
+                    });
+                  }
+                }
+              }
+              finally {
+                session.unlockMovement();
               }
 
-              // session.echo("PULL: Done");
+              return true;
             }
-            finally {
-              MoveUtils2.stop(session);
-              pullPath.stopRecording();
-            }
+
+            return false;
           }
-          finally {
-            if(postPullBandolier != null) {
-              session.doCommand("/bandolier activate " + postPullBandolier);
-            }
-          }
-        }
-      }
-      finally {
-        session.unlockMovement();
+        };
+
+        return Collections.singletonList(command);
       }
     }
 
     return null;
-  }
-
-  private class Pair<A, B> {
-    private A a;
-    private B b;
-
-    public Pair(A a, B b) {
-      this.a = a;
-      this.b = b;
-    }
-
-    public A getA() {
-      return a;
-    }
-
-    public B getB() {
-      return b;
-    }
   }
 
   private final Map<List<Node>, Long> suspendedPaths = new HashMap<>();
@@ -304,11 +313,11 @@ public class PullModule implements Module {
     return suspendTimeOut != null && suspendTimeOut > System.currentTimeMillis();
   }
 
-  private Pair<List<Node>, List<Spawn>> selectPath() {
-    if(order.equals("path")) {
+  private List<Node> selectPath() {
+    if(conf.getOrder() == Order.PATH) {
       for(List<Node> path : paths) {
         if(!isPathSuspended(path)) {
-          if(!pullNameds) {
+          if(!conf.isPullNameds()) {
             List<Node> shortenedPath = new ArrayList<>();
 
             outer:
@@ -329,13 +338,57 @@ public class PullModule implements Module {
             List<Spawn> nearbySpawns = getSpawns(node);
 
             if(nearbySpawns.size() > 0) {
-              return new Pair<>(path, nearbySpawns);
+              return path;
             }
           }
         }
       }
     }
-    else if(order.equals("density")) {
+    else if(conf.getOrder() == Order.NEAREST) {
+      List<Node> bestPath = null;
+      List<Spawn> bestSpawns = null;
+      double closestDistance = Double.MAX_VALUE;
+
+      for(List<Node> path : paths) {
+        if(!isPathSuspended(path)) {
+          if(!conf.isPullNameds()) {
+            List<Node> shortenedPath = new ArrayList<>();
+
+            outer:
+            for(Node node : path) {
+              for(Spawn spawn : getSpawns(node, 50)) {
+                if(spawn.isNamedMob()) {
+                  break outer;
+                }
+              }
+
+              shortenedPath.add(node);
+            }
+
+            path = shortenedPath;
+          }
+
+          for(Node node : path) {
+            List<Spawn> nearbySpawns = getSpawns(node);
+
+            if(nearbySpawns.size() > 0) {
+              for(Spawn spawn : nearbySpawns) {
+                if(spawn.getDistance() < closestDistance) {
+                  bestPath = path;
+                  bestSpawns = nearbySpawns;
+                  closestDistance = spawn.getDistance();
+                }
+              }
+
+              break;
+            }
+          }
+        }
+      }
+
+      return bestSpawns == null ? null : bestPath;
+    }
+    else if(conf.getOrder() == Order.DENSITY) {
       int pathNo = 1;
       List<Node> bestPath = null;
       Set<Spawn> bestSpawns = null;
@@ -365,7 +418,7 @@ public class PullModule implements Module {
         session.echo("PULL: Selected path " + bestPathNo + " with density " + bestDensity);
       }
 
-      return bestSpawns == null ? null : new Pair<List<Node>, List<Spawn>>(bestPath, new ArrayList<>(bestSpawns));
+      return bestSpawns == null ? null : bestPath;
     }
 
     return null;
@@ -422,42 +475,106 @@ public class PullModule implements Module {
 //    }
 //  }
 
-  private Node pullAlongPath(List<Node> path, List<Spawn> intendedSpawns) {
+  private Node pullAlongPath(List<Node> path) {
     session.echo("PULL: Pulling along path " + path.get(0) + " - " + path.get(path.size() - 1));
 
-    Me me = session.getMe();
+    final Me me = session.getMe();
+
     long firstAgroMillis = 0;
 
-    for(Node node : path) {
-      MoveUtils2.moveTowards(session, node.x, node.y, ignoreAgroMillis == 0 ? earlyExit : null);
+    for(int i = 0; i < path.size(); i++) {
+      Node node = path.get(i);
+      Spawn closestSpawn = null;
 
-      if(ignoreAgroMillis == 0 && pullMethod != null && pullMethod.isReady()) {
-        Spawn closestMatch = null;
-
-        for(Spawn intendedSpawn : intendedSpawns) {
-          if((intendedSpawn.inLineOfSight() || intendedSpawn.getDistance() < 50) && intendedSpawn.getDistance() < pullMethod.getSpell().getRange()) {
-            if(closestMatch == null || closestMatch.getDistance() > intendedSpawn.getDistance()) {
-              closestMatch = intendedSpawn;
-            }
+      for(int j = i; j < path.size(); j++) {
+        for(Spawn spawn : getSpawns(path.get(j))) {
+          if(closestSpawn == null || spawn.getDistance() < closestSpawn.getDistance()) {
+            closestSpawn = spawn;
           }
-        }
-
-        if(closestMatch != null) {
-//          session.echo("PULL: Agroing " + closestMatch + " on the move, using " + pullMethod);
-          session.getMe().activateEffect(pullMethod, closestMatch);
         }
       }
 
-      if(me.inCombat()) {
+      if(closestSpawn == null) {
+        session.echo("PULL: Aborting, no spawns available (anymore)");
+        return node;
+      }
+      else {
+        if(me.getTarget() != closestSpawn && closestSpawn.getDistance() < 250) {
+          session.doCommand("/target id " + closestSpawn.getId());
+        }
+      }
+
+      Condition condition = null;
+      final Spawn finalClosestSpawn = closestSpawn;
+
+      if(conf.getIgnoreAgro() == 0 && conf.getMinimum() == 0) {
+        condition = new Condition() {
+          private int conditionMet;
+          private int lineOfSight;
+
+          @Override
+          public boolean isValid() {
+            if(conditionMet > 1) {
+              return true;
+            }
+
+            if(me.getTarget() != finalClosestSpawn) {
+              if(finalClosestSpawn.getDistance() < 350) {
+                session.doCommand("/target id " + finalClosestSpawn.getId());
+              }
+            }
+            else {
+              if(finalClosestSpawn.inLineOfSight()) {
+                lineOfSight++;
+              }
+              else {
+                lineOfSight = 0;
+              }
+              // Already pre-targetted, see if we can agro it
+              if(lineOfSight > 1 && agroFromDistanceOnTheMove(finalClosestSpawn)) {
+                conditionMet++;
+                if(conditionMet > 1) {
+                  return true;
+                }
+              }
+            }
+
+            return session.getMe().inCombat();
+          }
+        };
+      }
+
+      MoveUtils2.moveTowards(session, node.x, node.y, condition);
+
+//      if(ignoreAgroMillis == 0 && pullMethod != null && pullMethod.isReady()) {
+//        Spawn closestMatch = null;
+//
+//        for(Spawn intendedSpawn : intendedSpawns) {
+//          if((intendedSpawn.inLineOfSight() || intendedSpawn.getDistance() < 50) && intendedSpawn.getDistance() < pullMethod.getSpell().getRange()) {
+//            if(closestMatch == null || closestMatch.getDistance() > intendedSpawn.getDistance()) {
+//              closestMatch = intendedSpawn;
+//            }
+//          }
+//        }
+//
+//        if(closestMatch != null) {
+////          session.echo("PULL: Agroing " + closestMatch + " on the move, using " + pullMethod);
+//          session.getMe().activateEffect(pullMethod, closestMatch);
+//        }
+//      }
+
+      if(me.inCombat() || (condition != null && condition.isValid())) {
         if(firstAgroMillis == 0) {
           firstAgroMillis = System.currentTimeMillis();
         }
-        if(ignoreAgroMillis == 0 || System.currentTimeMillis() - firstAgroMillis > ignoreAgroMillis) {
+        if((conf.getIgnoreAgro() == 0 && conf.getMinimum() == 0)
+            || (conf.getIgnoreAgro() > 0 && System.currentTimeMillis() - firstAgroMillis > conf.getIgnoreAgro() * 1000)
+            || (conf.getMinimum() > 0 && me.getExtendedTargetCount() >= conf.getMinimum())) {
           return node;
         }
       }
 
-      if(ignoreAgroMillis == 0) {
+      if(conf.getIgnoreAgro() == 0 && conf.getMinimum() == 0) {
         List<Spawn> spawnsAtNode = getSpawns(node);
 
         if(spawnsAtNode.size() > 0) {
@@ -469,8 +586,37 @@ public class PullModule implements Module {
     return path.get(path.size() - 1);
   }
 
-  @SuppressWarnings("unused")
-  private void agroSpawn(Spawn spawn, Node node) {
+  private long aggroLockout;
+
+  private boolean agroFromDistanceOnTheMove(final Spawn spawn) {
+    if(aggroLockout < System.currentTimeMillis()) {
+      if(pullMethod != null && pullMethod.isReady()) {
+        if((spawn.inLineOfSight() || spawn.getDistance() < 50) && spawn.getDistance() < pullMethod.getRange()) {
+          aggroLockout = System.currentTimeMillis() + (pullMethod.getType() == Type.COMMAND ? 1500 : 250);
+          session.getMe().activateEffect(null, pullMethod, new ArrayList<Spawn>() {{
+            add(spawn);
+          }});
+
+          while(pullMethod.getType() != Type.COMMAND && !session.getMe().isBard() && session.getMe().isCasting() && pullMethod.getCastTime() > 0) {
+            session.delayUntilUpdate();
+          }
+
+          if(pullMethod.getCastTime() > 0) {
+            session.delay(500);
+            session.echo("PULL: Cast done");
+          }
+
+          if(pullMethod.getType() == Type.COMMAND) {
+            return true;
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
+  private void agroSpawn(final Spawn spawn, @SuppressWarnings("unused") Node node) {
     Path returnPath = new Path(session);
 
     returnPath.record();
@@ -486,7 +632,9 @@ public class PullModule implements Module {
       else {
         session.echo("PULL: Using " + pullMethod);
         if(pullMethod.isReady()) {
-          session.getMe().activateEffect(pullMethod, spawn);
+          session.getMe().activateEffect(null, pullMethod, new ArrayList<Spawn>() {{
+            add(spawn);
+          }});
         }
       }
 //      MoveUtils.moveTowards(session, node.x, node.y);
@@ -498,8 +646,8 @@ public class PullModule implements Module {
   }
 
   @Override
-  public boolean isLowLatency() {
-    return false;
+  public int getBurstCount() {
+    return 8;
   }
 
   public List<Spawn> getHostilePCs(Node node) {
@@ -507,10 +655,12 @@ public class PullModule implements Module {
     Me me = session.getMe();
 
     for(Spawn spawn : session.getSpawns()) {
-      if(spawn.getDistance(node.x, node.y) < node.size + node.size / 2) {
-        if((node.z == null && Math.abs(spawn.getZ() - me.getZ()) < zrange) || (node.z != null && Math.abs(spawn.getZ() - node.z) < 20)) {
-          if(spawn.getType() == SpawnType.PC && !spawn.isBot() && !spawn.isGroupMember()) {
-            spawns.add(spawn);
+      if(spawn.getType() == SpawnType.PC && !spawn.isAlly()) {
+        if(spawn.getDistance(node.x, node.y) < node.size + 100) {
+          if((node.z == null && Math.abs(spawn.getZ() - me.getZ()) < conf.getZRange()) || (node.z != null && Math.abs(spawn.getZ() - node.z) < 20)) {
+            if(conf.getIgnoredHostiles() == null || conf.getIgnoredHostiles().isEmpty() || !spawn.getName().matches(conf.getIgnoredHostiles())) {
+              spawns.add(spawn);
+            }
           }
         }
       }
@@ -519,14 +669,42 @@ public class PullModule implements Module {
     return spawns;
   }
 
+  /**
+   * Returns the nearest spawn to your location, within a defined circular area.
+   *
+   * @param x center x
+   * @param y center y
+   * @param z center z
+   * @param radius radius
+   * @return nearest spawn to your location, or null if no matching spawns found
+   */
+  public Spawn getNearestMatchingSpawn(float x, float y, Float z, int radius) {
+    Spawn closestSpawn = null;
+    Me me = session.getMe();
+
+    for(Spawn spawn : session.getSpawns()) {
+      if(spawn.getDistance(x, y) < radius) {
+        if((z == null && Math.abs(spawn.getZ() - me.getZ()) < conf.getZRange()) || (z != null && Math.abs(spawn.getZ() - z) < 20)) {
+          if(isValidTarget(spawn) && !spawn.isPullIgnored()) {
+            if(closestSpawn == null || spawn.getDistance() < closestSpawn.getDistance()) {
+              closestSpawn = spawn;
+            }
+          }
+        }
+      }
+    }
+
+    return closestSpawn;
+  }
+
   public List<Spawn> getSpawns(Node node, int extraRadius) {
     List<Spawn> spawns = new ArrayList<>();
     Me me = session.getMe();
 
     for(Spawn spawn : session.getSpawns()) {
       if(spawn.getDistance(node.x, node.y) < node.size + extraRadius) {
-        if((node.z == null && Math.abs(spawn.getZ() - me.getZ()) < zrange) || (node.z != null && Math.abs(spawn.getZ() - node.z) < 20)) {
-          if(isValidTarget(spawn) && !spawn.isIgnored()) {
+        if((node.z == null && Math.abs(spawn.getZ() - me.getZ()) < conf.getZRange()) || (node.z != null && Math.abs(spawn.getZ() - node.z) < 20)) {
+          if(isValidTarget(spawn) && !spawn.isPullIgnored()) {
             spawns.add(spawn);
           }
         }
@@ -543,9 +721,7 @@ public class PullModule implements Module {
   private boolean isValidTarget(Spawn spawn) {
     if(spawn.getType() == SpawnType.NPC) {
       if(TargetPattern.isValidTarget(validTargets, spawn)) {
-        if(ExpressionEvaluator.evaluate(conditions, new ExpressionRoot(session, spawn, null, null, null), this)) {
-          return true;
-        }
+        return true;
       }
     }
 

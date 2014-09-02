@@ -1,31 +1,26 @@
 package autoeq.expr;
 
+import java.util.List;
+
+import autoeq.expr.Parser.TypedValue;
+
 public abstract class Operator {
-  public enum Type {UNARY, BINARY}
-
+  private final String description;
   private final int level;
-  private final Type type;
 
-  public Operator(int level, Type type) {
+  public Operator(String description, int level) {
+    this.description = description;
     this.level = level;
-    this.type = type;
   }
 
   public int getLevel() {
     return level;
   }
 
-  public Type getType() {
-    return type;
-  }
+  public abstract TypedValue operate(TypedValue left, TypedValue root, List<Token> tokens, boolean parseOnly) throws SyntaxException;
 
-  /**
-   * @param left
-   * @throws SyntaxException
-   */
-  public Object shortCutEvaluation(Object left) throws SyntaxException {
-    return null;
+  @Override
+  public String toString() {
+    return "Operator[" + description + "@" + level +"]";
   }
-
-  public abstract Object operate(Object left, Object right) throws SyntaxException;
 }

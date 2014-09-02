@@ -1,66 +1,102 @@
 package autoeq;
 
+import java.util.HashMap;
 import java.util.Map;
 
+import autoeq.eq.EverquestSession;
 import autoeq.eq.Spawn;
+import autoeq.eq.Spell;
+import autoeq.eq.SpellEffectManager;
+import autoeq.eq.ZoningException;
+import autoeq.eq.Spawn.Source;
 
 public class BotUpdateEvent extends Event {
+  private final int zoneId;
+
   private final String name;
-  private final Map<Integer, Long> spellDurations;
-  private final int healthPct;
-  private final Spawn target;
   private final int spawnId;
+  private final int healthPct;
   private final int manaPct;
   private final int endurancePct;
-  private final int zoneId;
+  private final boolean isUnderDirectAttack;
+  private final Map<Integer, Long> spellDurations;
+
+  private final int targetId;
+  private final boolean targetIsExtendedTarget;
+  private final int targetHitPointsPct;
 
   private final long eventTime;
 
-  public BotUpdateEvent(String name, int zoneId, int spawnId, Map<Integer, Long> spellDurations, int healthPct, int manaPct, int endurancePct, Spawn target) {
+  public BotUpdateEvent(int zoneId, Spawn spawn) {
     this.eventTime = System.currentTimeMillis();
-    this.name = name;
     this.zoneId = zoneId;
-    this.spawnId = spawnId;
-    this.spellDurations = spellDurations;
-    this.healthPct = healthPct;
-    this.manaPct = manaPct;
-    this.endurancePct = endurancePct;
-    this.target = target;
+    this.name = spawn.getName();
+    this.spawnId = spawn.getId();
+    this.healthPct = spawn.getHitPointsPct();
+    this.manaPct = spawn.getManaPct();
+    this.endurancePct = spawn.getEndurancePct();
+    this.isUnderDirectAttack = spawn.isUnderDirectAttack();
+    this.targetId = spawn.getTarget() == null ? 0 : spawn.getTarget().getId();
+    this.targetIsExtendedTarget = spawn.getTarget() != null && spawn.getTarget().isExtendedTarget();
+    this.targetHitPointsPct = spawn.getTarget() == null ? 0 : spawn.getTarget().getHitPointsPct();
+
+    this.spellDurations = new HashMap<>();
+
+    for(Spell spell : spawn.getSpellEffects()) {
+      SpellEffectManager manager = spawn.getSpellEffectManager(spell);
+
+      long timeLeft = manager.getMillisLeft();
+
+      if(timeLeft > 0) {
+        spellDurations.put(spell.getId(), timeLeft);
+      }
+    }
   }
 
   public long getEventAge() {
     return System.currentTimeMillis() - eventTime;
   }
 
-  public int getZoneId() {
-    return zoneId;
-  }
-
-  public int getSpawnId() {
-    return spawnId;
-  }
-
   public String getName() {
     return name;
   }
 
-  public Map<Integer, Long> getSpellDurations() {
-    return spellDurations;
-  }
+  public void applyEvent(EverquestSession session) {
+    Spawn botSpawn = session.getSpawn(spawnId);
 
-  public int getHealthPct() {
-    return healthPct;
-  }
+    if(botSpawn != null && !botSpawn.isMe() && session.getZoneId() == zoneId) {
+      if(spellDurations != null) {
+        String buffsAndDurations = "";
 
-  public int getManaPct() {
-    return manaPct;
-  }
+        for(Map.Entry<Integer, Long> entry : spellDurations.entrySet()) {
+          if(!buffsAndDurations.isEmpty()) {
+            buffsAndDurations += " ";
+          }
+          buffsAndDurations += entry.getKey() + ":" + (entry.getValue() + 12000) / 1000;  // +12000 here to make sure Promised heals wear off -- the values are multiples of 6000 unfortunately
+        }
 
-  public int getEndurancePct() {
-    return endurancePct;
-  }
+        try {
+          botSpawn.updateBuffsAndDurations(buffsAndDurations, true, Source.BOT);
+        }
+        catch(RuntimeException e) {
+          System.out.println("Error while updating BOT: " + botSpawn.getName() + " for " + session.getMeSpawn());
+          throw new ZoningException();
+        }
+      }
 
-  public Spawn getTarget() {
-    return target;
+      botSpawn.updateHealth(healthPct, Source.BOT);
+      botSpawn.updateMana(manaPct);
+      botSpawn.updateEndurance(endurancePct);
+      botSpawn.updateTarget(targetId, targetIsExtendedTarget);
+      botSpawn.updateUnderDirectAttack(isUnderDirectAttack);
+
+      if(targetId != 0) {
+        Spawn target = session.getSpawn(targetId);
+
+        if(target != null) {
+          target.updateHealth(targetHitPointsPct, Source.BOT);
+        }
+      }
+    }
   }
 }
